@@ -728,6 +728,7 @@
   }
   function choose(which) {
     which = which === "google" ? "google" : "brosi";
+    if (N && N.pickerDone) N.pickerDone();
     store.set("bh.lastChoice", which);
     if (which === "google") {
       if (N && N.openStockHome) N.openStockHome(); else hint("Preview: would open Google TV");

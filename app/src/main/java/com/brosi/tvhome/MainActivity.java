@@ -61,6 +61,8 @@ public class MainActivity extends Activity {
     private static final String STOCK_HOME = "com.google.android.apps.tv.launcherx";
 
     private volatile String launchMode = "";
+    /** True while Brosi Home is the screen in front. */
+    static volatile boolean resumed = false;
 
     private WebView web;
     private boolean usingFallback = false;
@@ -156,6 +158,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         js("window.onNativeResume && window.onNativeResume()");
         // If we booted offline, try the live UI again once we're back on screen.
         if (usingFallback && !BuildConfig.UI_URL.isEmpty()) {
@@ -166,6 +169,12 @@ public class MainActivity extends Activity {
                 }
             });
         }
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        super.onPause();
     }
 
     @Override
@@ -428,6 +437,12 @@ public class MainActivity extends Activity {
                 try { startActivity(go); } catch (Exception ignored) { }
             });
             return true;
+        }
+
+        /** The user chose an experience; stop re-showing the picker until the next wake. */
+        @JavascriptInterface
+        public void pickerDone() {
+            BrosiService.pickerHandled = true;
         }
 
         /** "pick" once if we were opened by the wake/boot listener, else "". */

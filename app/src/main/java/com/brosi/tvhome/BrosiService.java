@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Log;
 
 /**
  * Keeps a tiny listener alive so that whenever the TV wakes up (or boots),
@@ -22,6 +23,9 @@ import android.os.Looper;
 public class BrosiService extends Service {
 
     static final String EXTRA_BOOT = "boot";
+    static final String TAG = "BrosiHome";
+    /** Set once the user picks an experience, so we stop re-showing the picker until the next wake. */
+    static volatile boolean pickerHandled = false;
     private static final String CHANNEL = "brosi";
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -53,6 +57,7 @@ public class BrosiService extends Service {
         screenReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context c, Intent i) {
+                Log.i(TAG, "received " + i.getAction());
                 // Give Google TV a moment to finish waking so the picker lands on top.
                 showPicker(1800);
             }
@@ -77,14 +82,25 @@ public class BrosiService extends Service {
         long now = System.currentTimeMillis();
         if (now - lastShown < 8000) return; // ignore duplicate wake events
         lastShown = now;
-        main.postDelayed(() -> {
-            try {
-                Intent i = new Intent(this, MainActivity.class)
-                        .putExtra(MainActivity.EXTRA_PICK, true)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                startActivity(i);
-            } catch (Exception ignored) { }
-        }, delayMs);
+        pickerHandled = false;
+        Log.i(TAG, "wake detected; scheduling picker");
+        // Google TV may pop its own "choose an account" screen a few seconds after waking
+        // and cover ours, so check again a few times and come back to the front if needed.
+        long[] tries = {delayMs, delayMs + 3500, delayMs + 8000, delayMs + 14000, delayMs + 22000};
+        for (long d : tries) main.postDelayed(this::bringPickerForward, d);
+    }
+
+    private void bringPickerForward() {
+        if (pickerHandled || MainActivity.resumed) return;
+        Log.i(TAG, "showing picker");
+        try {
+            Intent i = new Intent(this, MainActivity.class)
+                    .putExtra(MainActivity.EXTRA_PICK, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            startActivity(i);
+        } catch (Exception e) {
+            Log.w(TAG, "could not show picker: " + e);
+        }
     }
 
     @Override
