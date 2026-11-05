@@ -33,6 +33,32 @@
 
   <div class="hint" id="hint"></div>
 
+  <!-- Shown when the TV turns on -->
+  <div class="picker" id="picker" aria-hidden="true">
+    <div class="pk-inner">
+      <div class="pk-greet" id="pk-greet">Good evening</div>
+      <div class="pk-title">Choose your experience</div>
+      <div class="pk-cards">
+        <div class="pk-card" data-choice="brosi" tabindex="0">
+          <div class="pk-face pk-brosi">
+            <div class="pk-mini-time" id="pk-time">10:00</div>
+            <div class="pk-mini-row"><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="pk-name">Brosi Home</div>
+          <div class="pk-sub">Your apps, scores &amp; weather</div>
+        </div>
+        <div class="pk-card" data-choice="google" tabindex="0">
+          <div class="pk-face pk-google">
+            <div class="pk-g-row"></div><div class="pk-g-row short"></div><div class="pk-g-row"></div>
+          </div>
+          <div class="pk-name">Google TV</div>
+          <div class="pk-sub">Recommendations &amp; Assistant</div>
+        </div>
+      </div>
+      <div class="pk-count" id="pk-count"></div>
+    </div>
+  </div>
+
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

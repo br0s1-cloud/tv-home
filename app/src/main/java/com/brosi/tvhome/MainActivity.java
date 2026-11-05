@@ -57,6 +57,10 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
 
     private static final String ASSET_URL = "file:///android_asset/index.html";
+    static final String EXTRA_PICK = "pick";
+    private static final String STOCK_HOME = "com.google.android.apps.tv.launcherx";
+
+    private volatile String launchMode = "";
 
     private WebView web;
     private boolean usingFallback = false;
@@ -68,6 +72,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_PICK, false)) launchMode = "pick";
+        BrosiService.start(this, false);
 
         web = new WebView(this);
         web.setBackgroundColor(Color.BLACK);
@@ -163,8 +169,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // Home pressed while we're already in front.
-        js("window.onNativeHome && window.onNativeHome()");
+        setIntent(intent);
+        if (intent != null && intent.getBooleanExtra(EXTRA_PICK, false)) {
+            js("window.onNativePick && window.onNativePick()");
+        } else {
+            // Home pressed while we're already in front.
+            js("window.onNativeHome && window.onNativeHome()");
+        }
     }
 
     @Override
@@ -384,6 +395,29 @@ public class MainActivity extends Activity {
                 js("window.__nativeCb && window.__nativeCb(" + JSONObject.quote(cbId) + ","
                         + JSONObject.quote(err) + "," + JSONObject.quote(body) + ")");
             });
+        }
+
+        /** "pick" once if we were opened by the wake/boot listener, else "". */
+        @JavascriptInterface
+        public String takeLaunchMode() {
+            String m = launchMode;
+            launchMode = "";
+            return m;
+        }
+
+        /** Hand the screen over to the stock Google TV home. */
+        @JavascriptInterface
+        public boolean openStockHome() {
+            PackageManager pm = getPackageManager();
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(STOCK_HOME);
+            if (i.resolveActivity(pm) == null) i = pm.getLeanbackLaunchIntentForPackage(STOCK_HOME);
+            if (i == null) i = pm.getLaunchIntentForPackage(STOCK_HOME);
+            if (i == null) return false;
+            final Intent go = i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            main.post(() -> {
+                try { startActivity(go); } catch (Exception ignored) { }
+            });
+            return true;
         }
 
         @JavascriptInterface

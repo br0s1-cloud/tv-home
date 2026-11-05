@@ -453,6 +453,7 @@
   }
 
   document.addEventListener("keydown", (e) => {
+    if (pickerOpen) return pickerKey(e);
     const k = e.key;
     const dir = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" }[k];
     if (dir) {
@@ -472,9 +473,80 @@
     if (k === "ContextMenu" || k === "e") { e.preventDefault(); return setEditing(!editing); }
   });
 
+
+  // ---------- experience picker (shown when the TV turns on) ----------
+  let pickerOpen = false, pickTimer = null, pickLeft = 0;
+  const PICK_SECONDS = 10;
+  function showPicker() {
+    const p = $("picker");
+    const hr = new Date().getHours();
+    $("pk-greet").textContent = (hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening") + ", Luke";
+    $("pk-time").textContent = $("time").textContent;
+    pickerOpen = true;
+    p.classList.add("show");
+    p.setAttribute("aria-hidden", "false");
+    const last = store.get("bh.lastChoice", "brosi");
+    const card = p.querySelector('[data-choice="' + last + '"]') || p.querySelector(".pk-card");
+    card.focus({ preventScroll: true });
+    pickLeft = PICK_SECONDS;
+    tickPick();
+    clearInterval(pickTimer);
+    pickTimer = setInterval(tickPick, 1000);
+  }
+  function tickPick() {
+    const f = document.activeElement;
+    const name = f && f.dataset && f.dataset.choice === "google" ? "Google TV" : "Brosi Home";
+    $("pk-count").textContent = pickLeft > 0 ? "Opening " + name + " in " + pickLeft + "…" : "";
+    if (pickLeft-- <= 0) choose(f && f.dataset ? f.dataset.choice : "brosi");
+  }
+  function stopCountdown() { clearInterval(pickTimer); pickTimer = null; $("pk-count").textContent = ""; }
+  function hidePicker() {
+    stopCountdown();
+    pickerOpen = false;
+    const p = $("picker");
+    p.classList.remove("show");
+    p.setAttribute("aria-hidden", "true");
+  }
+  function choose(which) {
+    which = which === "google" ? "google" : "brosi";
+    store.set("bh.lastChoice", which);
+    if (which === "google") {
+      if (N && N.openStockHome) N.openStockHome(); else hint("Preview: would open Google TV");
+      setTimeout(hidePicker, 600);
+    } else {
+      hidePicker();
+      focusFirst();
+    }
+  }
+  function pickerKey(e) {
+    const k = e.key;
+    const cards = Array.from(document.querySelectorAll(".pk-card"));
+    const i = cards.indexOf(document.activeElement);
+    if (k === "ArrowLeft" || k === "ArrowRight") {
+      e.preventDefault();
+      stopCountdown(); // any input means they're choosing themselves
+      const next = cards[(i + (k === "ArrowRight" ? 1 : -1) + cards.length) % cards.length];
+      next.focus({ preventScroll: true });
+      return true;
+    }
+    if (k === "Enter" || k === " " || k === "NumpadEnter") {
+      e.preventDefault();
+      choose(document.activeElement && document.activeElement.dataset.choice);
+      return true;
+    }
+    if (k === "Escape" || k === "Backspace" || k === "GoBack" || k === "BrowserBack") {
+      e.preventDefault();
+      choose("brosi");
+      return true;
+    }
+    e.preventDefault();
+    return true; // swallow other keys while open
+  }
+  window.onNativePick = showPicker;
+
   // ---------- native hooks ----------
-  window.onNativeBack = back;
-  window.onNativeMenu = () => setEditing(!editing);
+  window.onNativeBack = () => { if (pickerOpen) choose("brosi"); else back(); };
+  window.onNativeMenu = () => { if (!pickerOpen) setEditing(!editing); };
   window.onNativeHome = () => { if (editing) setEditing(false); focusFirst(); };
   window.onAppsChanged = () => { loadApps(); };
   window.onNativeResume = () => {
@@ -493,4 +565,6 @@
   setInterval(loadWeather, 15 * 60000);
   loadScores();
   focusFirst();
+  if (N && N.takeLaunchMode && N.takeLaunchMode() === "pick") showPicker();
+  if (!N && /[?&]pick\b/.test(location.search)) showPicker(); // browser preview: ?pick
 })();
