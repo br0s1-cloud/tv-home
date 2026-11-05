@@ -30,8 +30,28 @@
   </header>
 
   <main>
-    <section class="apps" id="apps" aria-label="Apps"></section>
+    <section class="home" id="home" aria-label="Home">
+      <div id="matrix" class="matrix"></div>
+
+      <section class="panel news" id="news" aria-label="Live news">
+        <div class="panel-head"><span class="live-dot"></span><span class="panel-title">Live news</span><span class="panel-sub">Reuters · AP · BBC · FT · WSJ</span></div>
+        <div class="news-view"><div class="news-track" id="news-track"></div></div>
+      </section>
+
+      <section class="panel stocks" id="stocks" aria-label="Markets">
+        <div class="panel-head"><span class="panel-title">Markets</span><span class="stk-cat" id="stk-cat"></span><span class="stk-dots" id="stk-dots"></span><span class="stk-note" id="stk-note">15-min delayed</span></div>
+        <div class="stk-grid" id="stk-grid"></div>
+      </section>
+    </section>
   </main>
+
+  <!-- Every installed app (opened from the "All apps" chip) -->
+  <div class="allapps" id="allapps" aria-hidden="true">
+    <div class="aa-inner scroller">
+      <div class="aa-title">All apps <span>Back to close</span></div>
+      <section class="apps" id="apps" aria-label="All apps"></section>
+    </div>
+  </div>
 
   <nav class="dock" id="dock" aria-label="Controls"></nav>
 

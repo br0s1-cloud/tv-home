@@ -155,13 +155,116 @@ main {
   position: fixed;
   left: 0;
   right: 0;
-  top: 21.6vw;
-  bottom: 6.6vw;
-  overflow: hidden;
-  padding: 1.8vw var(--pad) 4vw;
-  -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
+  top: 21vw;
+  bottom: 6.4vw;
+  padding: 1.2vw var(--pad) 0;
 }
+
+/* Home: 5-column grid. Cols 1-2 = 2x2 app matrix, cols 3-5 = news (top) + markets (bottom) */
+.home {
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.6vw 1.8vw;
+}
+.home .panel { min-height: 0; overflow: hidden; }
+.matrix { display: contents; }
+.matrix > .tile { aspect-ratio: auto; height: 100%; }
+.home .news   { grid-column: 3 / 6; grid-row: 1; }
+.home .stocks { grid-column: 3 / 6; grid-row: 2; }
+
+/* Bigger logos in the matrix */
+.matrix .tile .logo img.fg   { width: 8vw; height: 8vw; }
+.matrix .tile .logo img.full { width: 4.6vw; height: 4.6vw; border-radius: 1vw; }
+.matrix .tile .logo .word    { font-size: 2.2vw; }
+
+/* Flip stacks */
+.tile.stack > .clip { background: var(--card-2); }
+.tile .face {
+  position: absolute; inset: 0;
+  background: var(--tint, var(--card-2));
+  transition: transform 420ms var(--ease), opacity 360ms var(--ease);
+}
+.tile .face.from-below { transform: translateY(40%); opacity: 0; }
+.tile .face.from-above { transform: translateY(-40%); opacity: 0; }
+.tile .face.leaving.to-above { transform: translateY(-40%); opacity: 0; }
+.tile .face.leaving.to-below { transform: translateY(40%); opacity: 0; }
+.stk-label {
+  position: absolute; top: 0.8vw; left: 1vw; z-index: 4;
+  font-size: 0.75vw; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.72); pointer-events: none;
+}
+.stk-pips { position: absolute; right: 0.9vw; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 0.35vw; z-index: 4; }
+.stk-pips i { width: 0.38vw; height: 0.38vw; border-radius: 50%; background: rgba(255,255,255,0.28); transition: transform 200ms, background 200ms; }
+.stk-pips i.on { background: #fff; transform: scale(1.35); }
+.stk-next {
+  position: absolute; left: 1vw; bottom: 0.75vw; z-index: 4;
+  font-size: 0.8vw; font-weight: 500; color: rgba(255,255,255,0.7);
+  opacity: 0; transform: translateY(0.3vw); transition: opacity 240ms, transform 300ms var(--spring);
+}
+.tile.stack:focus .stk-next { opacity: 1; transform: none; }
+
+/* Live news */
+.news .live-dot { width: 0.5vw; height: 0.5vw; border-radius: 50%; background: var(--live); align-self: center; animation: pulse 1.6s ease-in-out infinite; }
+.news-view { position: relative; flex: none; overflow: hidden; --rowh: 2.9vw; height: calc(var(--rowh) * 3); }
+.news-track { transition: transform 600ms var(--ease); }
+.news-track.shift { transform: translateY(calc(var(--rowh) * -1)); }
+.news-track.snap { transition: none; }
+.news-row { height: var(--rowh); display: flex; align-items: center; gap: 0.9vw; border-top: 1px solid rgba(255,255,255,0.05); }
+.news-row:first-child { border-top: 0; }
+.news-row .src {
+  flex: none; width: 4.4vw; text-align: center;
+  font-size: 0.68vw; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 0.22vw 0; border-radius: 0.35vw; background: rgba(255,255,255,0.08); color: var(--text);
+}
+.src-reuters { background: rgba(255,128,0,0.18) !important; color: #ffb066 !important; }
+.src-ap      { background: rgba(255,69,58,0.16) !important;  color: #ff8a80 !important; }
+.src-bbc     { background: rgba(255,255,255,0.12) !important; }
+.src-ft      { background: rgba(255,186,140,0.18) !important; color: #ffd2b0 !important; }
+.src-wsj     { background: rgba(120,160,255,0.16) !important; color: #a9c1ff !important; }
+.news-row .hl { flex: 1; min-width: 0; font-size: 1vw; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-row .ago { flex: none; font-size: 0.78vw; color: var(--muted); font-variant-numeric: tabular-nums; }
+.news-empty, .stk-empty { color: var(--muted); font-size: 0.95vw; padding-top: 0.6vw; }
+
+/* Markets */
+.stocks .stk-cat { font-size: 0.85vw; color: var(--text); font-weight: 600; }
+.stk-dots { display: inline-flex; gap: 0.3vw; align-self: center; }
+.stk-dots i { width: 0.36vw; height: 0.36vw; border-radius: 50%; background: rgba(255,255,255,0.25); }
+.stk-dots i.on { background: #fff; }
+.stk-note { margin-left: auto; font-size: 0.72vw; color: var(--muted); }
+.stk-grid {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: 1fr 1fr; gap: 0.6vw 0.8vw;
+  transition: opacity 260ms var(--ease), transform 260ms var(--ease);
+}
+.stk-grid.swap { opacity: 0; transform: translateY(0.4vw); }
+.stk {
+  border-radius: 0.6vw; background: rgba(255,255,255,0.04);
+  padding: 0.45vw 0.7vw; display: flex; flex-direction: column; justify-content: center; gap: 0.15vw; min-width: 0;
+}
+.stk-top, .stk-bot { display: flex; align-items: center; justify-content: space-between; gap: 0.5vw; }
+.stk .sym { font-size: 0.9vw; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stk .chg { font-size: 0.72vw; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stk.up .chg { color: #30d158; }
+.stk.down .chg { color: #ff453a; }
+.stk .px { font-size: 0.95vw; font-weight: 300; font-variant-numeric: tabular-nums; }
+.spark { width: 3.6vw; height: 1.1vw; flex: none; }
+.spark polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark.up polyline { stroke: #30d158; }
+.spark.down polyline { stroke: #ff453a; }
+
+/* All apps overlay */
+.allapps {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,0.92);
+  -webkit-backdrop-filter: blur(1.6vw); backdrop-filter: blur(1.6vw);
+  opacity: 0; visibility: hidden; transition: opacity 300ms var(--ease), visibility 0s linear 300ms;
+}
+.allapps.show { opacity: 1; visibility: visible; transition: opacity 300ms var(--ease); }
+.aa-inner { position: absolute; inset: 0; overflow: hidden; padding: 3vw var(--pad) 4vw; }
+.aa-title { font-size: 2vw; font-weight: 300; margin-bottom: 2vw; }
+.aa-title span { font-size: 0.9vw; color: var(--muted); margin-left: 1vw; }
 
 .apps {
   display: grid;

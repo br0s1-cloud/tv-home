@@ -64,6 +64,43 @@ window.TV_CONFIG = {
     },
   },
 
+  // Home screen 2x2: YouTube + Spotify fixed; two "arrow down to flip" stacks.
+  // Stacks match installed apps by name, in this order (most used first).
+  home: {
+    youtube: "com.google.android.youtube.tv",
+    music: "com.spotify.tv.android",
+    entertainment: ["Netflix", "Prime Video", "Hulu", "Peacock", "Disney", "Max", "HBO", "Paramount",
+      "Apple TV", "Tubi", "Pluto", "Crunchyroll", "Plex", "STARZ", "discovery", "AMC", "Philo", "YouTube TV"],
+    sports: ["NFL", "NBA", "Sling", "ESPN", "FOX Sports", "CBS Sports", "NBC Sports", "DAZN", "MLB", "NHL",
+      "Fubo", "Monumental", "FanDuel"],
+  },
+
+  // Live news: newest headlines across these sources (Reuters/AP/FT via Google News).
+  news: {
+    rotateSeconds: 7,
+    sources: [
+      { tag: "Reuters", gn: true, url: "https://news.google.com/rss/search?q=when:12h+site:reuters.com&hl=en-US&gl=US&ceid=US:en" },
+      { tag: "AP",      gn: true, url: "https://news.google.com/rss/search?q=when:12h+site:apnews.com&hl=en-US&gl=US&ceid=US:en" },
+      { tag: "BBC",               url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
+      { tag: "FT",      gn: true, url: "https://news.google.com/rss/search?q=when:24h+site:ft.com&hl=en-US&gl=US&ceid=US:en" },
+      { tag: "WSJ",               url: "https://feeds.content.dowjones.io/public/rss/RSSWorldNews" },
+    ],
+  },
+
+  // Markets: rotates through these groups. [symbol, display name] or just "SYMBOL".
+  markets: {
+    rotateSeconds: 12,
+    groups: [
+      { name: "Indices & Big Tech/AI", symbols: [["^GSPC", "S&P 500"], ["^IXIC", "Nasdaq"], ["^DJI", "Dow"], "NVDA", "AAPL", "MSFT", "GOOGL", "META"] },
+      { name: "Cybersecurity & SaaS",  symbols: ["CRWD", "PANW", "ZS", "NET", "FTNT", "S", "CRM", "NOW"] },
+      { name: "Defense & Aerospace",   symbols: ["LMT", "RTX", "NOC", "GD", "LHX", "PLTR", "BA", "KTOS"] },
+      { name: "Fortune 500 movers", movers: ["WMT", "AMZN", "AAPL", "UNH", "BRK-B", "CVS", "XOM", "GOOGL", "MCK", "COR",
+        "COST", "JPM", "MSFT", "CAH", "CVX", "CI", "F", "BAC", "GM", "ELV", "C", "CNC", "HD", "MPC", "KR", "PSX", "VZ",
+        "T", "CMCSA", "WFC", "GS", "MS", "TGT", "PEP", "JNJ", "PG", "DIS", "META", "NVDA", "TSLA", "INTC", "IBM", "ORCL",
+        "UPS", "FDX", "LOW"] },
+    ],
+  },
+
   // First-run app order (by Android package name). Anything not listed
   // goes after these, alphabetically. Reorder on the TV with Edit.
   defaultOrder: [

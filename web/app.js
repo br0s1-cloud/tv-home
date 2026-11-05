@@ -365,6 +365,7 @@
     ["com.peacocktv.peacockandroid", "Peacock", "#222"], ["com.espn.score_center", "ESPN", "#c8102e"],
     ["com.spotify.tv.android", "Spotify", "#1db954"], ["com.google.android.youtube.tvunplugged", "YouTube TV", "#282828"],
     ["com.apple.atve.androidtv.appletv", "Apple TV", "#333"], ["com.android.vending", "Play Store", "#01875f"],
+    ["com.sling", "Sling", "#0b5cad"], ["com.gotv.nflgamecenter.us.lite", "NFL", "#013369"], ["com.nbaimd.gametime.nba2011", "NBA", "#1d428a"],
   ];
 
   let allApps = [];      // [{pkg,label}]
@@ -387,7 +388,8 @@
     (CFG.defaultOrder || []).forEach((p) => { if (known.has(p) && !seen.has(p)) { base.push(p); seen.add(p); } });
     allApps.slice().sort((a, b) => a.label.localeCompare(b.label)).forEach((a) => { if (!seen.has(a.pkg)) { base.push(a.pkg); seen.add(a.pkg); } });
     order = base;
-    renderApps();
+    renderHome();
+    if (allOpen) renderApps();
   }
 
   function saveLayout() {
@@ -407,7 +409,7 @@
       const app = appByPkg(pkg);
       if (!app) return;
       const isHidden = hidden.has(pkg);
-      if (isHidden && !editing) return;
+      if (isHidden && !editing && !allOpen) return;
       const t = document.createElement("div");
       t.className = "tile" + (isHidden ? " hidden-app" : "") + (picked === pkg ? " picked" : "") + (firstRender ? " enter" : "");
       t.style.setProperty("--i", idx++);
@@ -432,7 +434,7 @@
       const el = grid.querySelector('[data-pkg="' + CSS.escape(keep) + '"]');
       if (el) { focusEl(el); return; }
     }
-    if (!document.activeElement || document.activeElement === document.body) focusFirst();
+    if (allOpen) { const f = grid.querySelector(".tile"); if (f && !grid.contains(document.activeElement)) focusEl(f); }
   }
 
   // Average color of an icon -> a deep tint behind it, so every tile reads as one big logo.
@@ -463,8 +465,8 @@
 
   // Each tile = the app's own logo, about the size the name text was, on a tile
   // tinted from the app's brand color. Logos come from the installed apps.
-  function paintTile(t, app) {
-    const clip = t.querySelector(".clip");
+  function paintTile(t, app) { paintInto(t.querySelector(".clip"), app); }
+  function paintInto(clip, app) {
     const draw = (data) => {
       const logo = document.createElement("div");
       logo.className = "logo";
@@ -504,6 +506,296 @@
     return w;
   }
 
+
+  // ---------- home: 2x2 matrix (YouTube, Spotify, Entertainment stack, Sports stack) ----------
+  const stacks = { ent: { title: "Entertainment", items: [], idx: 0 }, sports: { title: "Sports", items: [], idx: 0 } };
+  function classify() {
+    const H = CFG.home || {};
+    const used = new Set([H.youtube, H.music]);
+    const take = (words) => {
+      const out = [];
+      (words || []).forEach((w) => {
+        const k = w.toLowerCase();
+        allApps.forEach((a) => {
+          if (!used.has(a.pkg) && a.label.toLowerCase().indexOf(k) >= 0) { out.push(a); used.add(a.pkg); }
+        });
+      });
+      return out;
+    };
+    stacks.sports.items = take(H.sports);   // sports words first so "NBC Sports" etc. land here
+    stacks.ent.items = take(H.entertainment);
+    Object.values(stacks).forEach((s) => { if (s.idx >= s.items.length) s.idx = 0; });
+  }
+  function appTile(app, extra) {
+    const t = document.createElement("div");
+    t.className = "tile " + (extra || "");
+    t.tabIndex = 0;
+    t.dataset.nav = "1";
+    t.dataset.action = "app";
+    t.dataset.pkg = app.pkg;
+    t.setAttribute("aria-label", app.label);
+    const clip = document.createElement("div");
+    clip.className = "clip";
+    t.appendChild(clip);
+    paintTile(t, app);
+    return t;
+  }
+  function stackTile(key) {
+    const s = stacks[key];
+    const t = document.createElement("div");
+    t.className = "tile stack";
+    t.tabIndex = 0;
+    t.dataset.nav = "1";
+    t.dataset.action = "stack";
+    t.dataset.stack = key;
+    const clip = document.createElement("div");
+    clip.className = "clip";
+    t.appendChild(clip);
+    t.appendChild(el("div", "stk-label", s.title));
+    t.appendChild(el("div", "stk-pips"));
+    t.appendChild(el("div", "stk-next"));
+    drawStack(t, 0);
+    return t;
+  }
+  function drawStack(t, dir) {
+    const s = stacks[t.dataset.stack];
+    const clip = t.querySelector(".clip");
+    const app = s.items[s.idx];
+    const face = el("div", "face" + (dir > 0 ? " from-below" : dir < 0 ? " from-above" : ""));
+    if (app) paintInto(face, app); else face.appendChild(el("div", "word", "No apps"));
+    const old = clip.querySelector(".face:not(.leaving)");
+    if (old && dir) {
+      old.classList.add("leaving", dir > 0 ? "to-above" : "to-below");
+      setTimeout(() => old.remove(), 420);
+    } else if (old) old.remove();
+    clip.appendChild(face);
+    if (dir) requestAnimationFrame(() => requestAnimationFrame(() => face.classList.remove("from-below", "from-above")));
+    t.setAttribute("aria-label", s.title + ": " + (app ? app.label : "none"));
+    const pips = t.querySelector(".stk-pips");
+    pips.innerHTML = "";
+    s.items.forEach((_, i) => pips.appendChild(el("i", i === s.idx ? "on" : "")));
+    const nxt = s.items[s.idx + 1];
+    t.querySelector(".stk-next").textContent = nxt ? "▼  " + nxt.label : (s.items.length > 1 ? "▲  back to " + s.items[0].label : "");
+  }
+  function flipStack(t, delta) {
+    const s = stacks[t.dataset.stack];
+    const n = s.idx + delta;
+    if (n < 0 || n >= s.items.length) return false;
+    s.idx = n;
+    drawStack(t, delta);
+    return true;
+  }
+  let homeRendered = false;
+  function renderHome() {
+    classify();
+    const H = CFG.home || {};
+    const m = $("matrix");
+    const keep = document.activeElement && m.contains(document.activeElement) ? (document.activeElement.dataset.pkg || document.activeElement.dataset.stack) : null;
+    m.innerHTML = "";
+    const yt = appByPkg(H.youtube), music = appByPkg(H.music);
+    m.appendChild(yt ? appTile(yt, "pos-yt") : chipTile("All apps", "allapps"));
+    m.appendChild(music ? appTile(music, "pos-music") : chipTile("All apps", "allapps"));
+    m.appendChild(stackTile("ent"));
+    m.appendChild(stackTile("sports"));
+    if (!homeRendered) m.querySelectorAll(".tile").forEach((t, i) => { t.classList.add("enter"); t.style.setProperty("--i", i); });
+    if (!homeRendered) setTimeout(() => m.querySelectorAll(".enter").forEach((e) => e.classList.remove("enter")), 1400);
+    homeRendered = true;
+    if (keep) {
+      const k = m.querySelector('[data-pkg="' + CSS.escape(keep) + '"], [data-stack="' + CSS.escape(keep) + '"]');
+      if (k) return focusEl(k);
+    }
+    if (!document.activeElement || document.activeElement === document.body) focusFirst();
+  }
+  function chipTile(text, action) {
+    const t = document.createElement("div");
+    t.className = "tile";
+    t.tabIndex = 0; t.dataset.nav = "1"; t.dataset.action = action;
+    const clip = el("div", "clip");
+    const logo = el("div", "logo");
+    logo.appendChild(el("div", "word", text));
+    clip.appendChild(logo);
+    t.appendChild(clip);
+    return t;
+  }
+
+  // ---------- All apps overlay ----------
+  let allOpen = false;
+  function setAllApps(on) {
+    allOpen = on;
+    const o = $("allapps");
+    o.classList.toggle("show", on);
+    o.setAttribute("aria-hidden", on ? "false" : "true");
+    if (on) { renderApps(); o.querySelector(".scroller").scrollTop = 0; }
+    else focusFirst();
+  }
+
+  // ---------- live news ----------
+  let newsItems = [], newsIdx = 0, newsTimer = null, lastNews = 0;
+  function cleanTitle(t, gn) {
+    t = (t || "").replace(/\s+/g, " ").trim();
+    return gn ? t.replace(/\s+[-–|]\s+[^-–|]{2,40}$/, "") : t; // Google News adds " - Publisher"
+  }
+  function loadNews() {
+    const NC = CFG.news || {};
+    const cached = store.get("bh.c.news", null);
+    if (!lastNews && cached && Date.now() - cached.t < 6 * 3600000 && cached.v.length) { newsItems = cached.v; renderNews(false); }
+    Promise.all((NC.sources || []).map((s) => getText(s.url).then((xml) => {
+      const doc = new DOMParser().parseFromString(xml, "application/xml");
+      return Array.from(doc.getElementsByTagName("item")).slice(0, 8).map((it) => ({
+        src: s.tag,
+        title: cleanTitle((it.getElementsByTagName("title")[0] || {}).textContent, s.gn),
+        when: Date.parse((it.getElementsByTagName("pubDate")[0] || {}).textContent || "") || 0,
+      })).filter((x) => x.title && x.title.length > 12);
+    }).catch(() => []))).then((lists) => {
+      lastNews = Date.now();
+      const seen = new Set();
+      const all = [].concat.apply([], lists).sort((a, b) => b.when - a.when).filter((x) => {
+        const k = x.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 36);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      // Mix sources so one outlet can't take over the panel.
+      const by = {};
+      all.forEach((x) => (by[x.src] = by[x.src] || []).push(x));
+      const mixed = [];
+      for (let i = 0; i < 8; i++) Object.keys(by).forEach((k) => { if (by[k][i]) mixed.push(by[k][i]); });
+      if (mixed.length) {
+        newsItems = mixed.slice(0, 30);
+        store.set("bh.c.news", { t: Date.now(), v: newsItems });
+        newsIdx = 0;
+        renderNews(false);
+      } else if (!newsItems.length) renderNews(false);
+    });
+    clearTimeout(loadNews._t);
+    loadNews._t = setTimeout(loadNews, 10 * 60000);
+  }
+  function newsRow(x) {
+    const r = el("div", "news-row");
+    r.appendChild(el("span", "src src-" + x.src.toLowerCase(), x.src));
+    r.appendChild(el("span", "hl", x.title));
+    if (x.when) r.appendChild(el("span", "ago", ago(x.when)));
+    return r;
+  }
+  function renderNews(animate) {
+    const track = $("news-track");
+    const n = newsItems.length;
+    if (!n) { track.innerHTML = ""; track.appendChild(el("div", "news-empty", "Loading headlines…")); return; }
+    const fill = () => {
+      track.innerHTML = "";
+      for (let i = 0; i < Math.min(4, n); i++) track.appendChild(newsRow(newsItems[(newsIdx + i) % n]));
+    };
+    if (animate && track.children.length >= 4) {
+      track.classList.add("shift");
+      setTimeout(() => { track.classList.add("snap"); track.classList.remove("shift"); fill(); requestAnimationFrame(() => track.classList.remove("snap")); }, 620);
+    } else fill();
+    clearInterval(newsTimer);
+    newsTimer = setInterval(() => { newsIdx = (newsIdx + 1) % Math.max(1, newsItems.length); renderNews(true); }, ((CFG.news || {}).rotateSeconds || 7) * 1000);
+  }
+
+  // ---------- markets (Yahoo Finance chart data, ~15 min delayed) ----------
+  const quotes = store.get("bh.c.quotes", {}) || {};
+  let mktIdx = 0, mktTimer = null;
+  function symOf(s) { return Array.isArray(s) ? s[0] : s; }
+  function nameOf(s) { return Array.isArray(s) ? s[1] : s; }
+  function marketOpen() {
+    const ny = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const d = ny.getDay(), m = ny.getHours() * 60 + ny.getMinutes();
+    return d > 0 && d < 6 && m >= 570 && m <= 960;
+  }
+  function limiter(n) {
+    let active = 0; const q = [];
+    const next = () => { if (active >= n || !q.length) return; active++; const [fn, res, rej] = q.shift(); fn().then(res, rej).finally(() => { active--; next(); }); };
+    return (fn) => new Promise((res, rej) => { q.push([fn, res, rej]); next(); });
+  }
+  const qLimit = limiter(5);
+  function fetchQuote(sym, spark) {
+    const url = "https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?range=1d&interval=" + (spark ? "15m" : "1d");
+    return qLimit(() => getJSON(url)).then((d) => {
+      const r = d && d.chart && d.chart.result && d.chart.result[0];
+      if (!r || !r.meta) throw new Error("no data");
+      const price = r.meta.regularMarketPrice;
+      const prev = r.meta.chartPreviousClose != null ? r.meta.chartPreviousClose : r.meta.previousClose;
+      const closes = spark ? ((r.indicators && r.indicators.quote && r.indicators.quote[0] && r.indicators.quote[0].close) || []).filter((v) => v != null) : (quotes[sym] && quotes[sym].closes) || [];
+      quotes[sym] = { price, prev, chg: prev ? ((price - prev) / prev) * 100 : 0, closes: closes.slice(-40), t: Date.now() };
+    }).catch(() => {});
+  }
+  function loadMarkets(full) {
+    const G = (CFG.markets || {}).groups || [];
+    if (!loadMarkets._n && Object.keys(quotes).length) renderMarkets(false); // show last prices instantly
+    const syms = new Set(), movers = new Set();
+    G.forEach((g) => (g.symbols || []).forEach((s) => syms.add(symOf(s))));
+    if (full) G.forEach((g) => (g.movers || []).forEach((s) => { if (!syms.has(s)) movers.add(s); }));
+    const jobs = [].concat(Array.from(syms).map((s) => fetchQuote(s, true)), Array.from(movers).map((s) => fetchQuote(s, false)));
+    Promise.all(jobs).then(() => { store.set("bh.c.quotes", quotes); renderMarkets(false); });
+    clearTimeout(loadMarkets._t);
+    const open = marketOpen();
+    loadMarkets._n = (loadMarkets._n || 0) + 1;
+    loadMarkets._t = setTimeout(() => loadMarkets(loadMarkets._n % 3 === 0), open ? 3 * 60000 : 30 * 60000);
+    $("stk-note").textContent = open ? "15-min delayed" : "Market closed · last prices";
+  }
+  function fmtPrice(p) {
+    if (p == null || isNaN(p)) return "—";
+    return p >= 1000 ? p.toLocaleString("en-US", { maximumFractionDigits: 0 }) : p.toFixed(2);
+  }
+  function spark(closes, up) {
+    if (!closes || closes.length < 3) return null;
+    const w = 100, h = 30, mn = Math.min.apply(null, closes), mx = Math.max.apply(null, closes), rng = mx - mn || 1;
+    const pts = closes.map((v, i) => (i / (closes.length - 1) * w).toFixed(1) + "," + (h - ((v - mn) / rng) * h).toFixed(1)).join(" ");
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 100 30");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("class", "spark " + (up ? "up" : "down"));
+    const pl = document.createElementNS(ns, "polyline");
+    pl.setAttribute("points", pts);
+    svg.appendChild(pl);
+    return svg;
+  }
+  function groupRows(g) {
+    if (g.movers) {
+      const have = g.movers.map((s) => ({ s, q: quotes[s] })).filter((x) => x.q && isFinite(x.q.chg));
+      if (!have.length) return [];
+      const sorted = have.slice().sort((a, b) => b.q.chg - a.q.chg);
+      const up = sorted.slice(0, 4), down = sorted.slice(-4).reverse();
+      return up.concat(down.filter((x) => up.indexOf(x) < 0)).map((x) => ({ sym: x.s, name: x.s, q: x.q }));
+    }
+    return (g.symbols || []).map((s) => ({ sym: symOf(s), name: nameOf(s), q: quotes[symOf(s)] }));
+  }
+  function renderMarkets(animate) {
+    const G = (CFG.markets || {}).groups || [];
+    if (!G.length) return;
+    const g = G[mktIdx % G.length];
+    $("stk-cat").textContent = g.name;
+    const dots = $("stk-dots");
+    dots.innerHTML = "";
+    G.forEach((_, i) => dots.appendChild(el("i", i === mktIdx % G.length ? "on" : "")));
+    const grid = $("stk-grid");
+    const draw = () => {
+      grid.innerHTML = "";
+      const rows = groupRows(g);
+      if (!rows.length) { grid.appendChild(el("div", "stk-empty", "Loading prices…")); return; }
+      rows.slice(0, 8).forEach((r) => {
+        const q = r.q || {};
+        const up = (q.chg || 0) >= 0;
+        const card = el("div", "stk " + (q.price == null ? "na" : up ? "up" : "down"));
+        const top = el("div", "stk-top");
+        top.appendChild(el("span", "sym", r.name.replace(/^\^/, "")));
+        top.appendChild(el("span", "chg", q.price == null ? "" : (up ? "▲ " : "▼ ") + Math.abs(q.chg).toFixed(2) + "%"));
+        card.appendChild(top);
+        const bot = el("div", "stk-bot");
+        bot.appendChild(el("span", "px", fmtPrice(q.price)));
+        const sv = spark(q.closes, up);
+        if (sv) bot.appendChild(sv);
+        card.appendChild(bot);
+        grid.appendChild(card);
+      });
+    };
+    if (animate) { grid.classList.add("swap"); setTimeout(() => { draw(); grid.classList.remove("swap"); }, 260); } else draw();
+    clearInterval(mktTimer);
+    mktTimer = setInterval(() => { mktIdx = (mktIdx + 1) % G.length; renderMarkets(true); }, ((CFG.markets || {}).rotateSeconds || 12) * 1000);
+  }
+
   // ---------- dock: inputs + settings + edit ----------
   function renderDock() {
     const dock = $("dock");
@@ -521,7 +813,7 @@
     const sp = document.createElement("div");
     sp.className = "spacer";
     dock.appendChild(sp);
-    dock.appendChild(chip(editing ? "Done" : "Edit", "edit"));
+    dock.appendChild(chip("All apps", "allapps"));
     dock.appendChild(chip("Settings", "settings"));
   }
   function chip(text, action, data) {
@@ -558,8 +850,8 @@
       }));
     }
     // Keep the focused tile comfortably inside the app area.
-    const main = document.querySelector("main");
-    if (main.contains(el)) {
+    const main = el.closest && el.closest(".scroller");
+    if (main) {
       const r = el.getBoundingClientRect(), m = main.getBoundingClientRect();
       const pad = m.height * 0.14;
       let target = main.scrollTop;
@@ -578,14 +870,14 @@
       { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
   }
   function focusFirst() {
-    const el = document.querySelector("#apps .tile") || document.querySelector("[data-nav]");
-    document.querySelector("main").scrollTop = 0;
+    const el = allOpen ? document.querySelector("#apps .tile") : (document.querySelector("#matrix .tile") || document.querySelector("[data-nav]"));
     focusEl(el);
   }
   function center(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
   function move(dir) {
     const cur = document.activeElement;
-    const all = Array.from(document.querySelectorAll("[data-nav]"));
+    const root = allOpen ? $("allapps") : document;
+    const all = Array.from(root.querySelectorAll("[data-nav]")).filter((x) => allOpen || !x.closest("#allapps"));
     if (!cur || !cur.dataset || !cur.dataset.nav) return focusFirst();
     const cr = cur.getBoundingClientRect(), c = center(cr);
     let best = null, bestScore = Infinity;
@@ -656,12 +948,20 @@
       if (N) N.openSettings(); else hint("Preview: would open Settings");
     } else if (a === "edit") {
       setEditing(!editing);
+    } else if (a === "allapps") {
+      setAllApps(true);
+    } else if (a === "stack") {
+      const s = stacks[el.dataset.stack], app = s && s.items[s.idx];
+      if (!app) return;
+      if (N) { if (!N.launch(app.pkg)) hint("Couldn't open that app"); }
+      else hint("Preview: would open " + app.label);
     }
   }
 
   function back() {
     if (picked) { picked = null; renderApps(); return; }
     if (editing) { setEditing(false); return; }
+    if (allOpen) { setAllApps(false); return; }
     focusFirst();
   }
 
@@ -679,6 +979,10 @@
           return renderApps(picked);
         }
       }
+      const ae = document.activeElement;
+      if (ae && ae.dataset && ae.dataset.action === "stack" && (dir === "down" || dir === "up")) {
+        if (flipStack(ae, dir === "down" ? 1 : -1)) return;
+      }
       if (dir === "right" && document.activeElement && document.activeElement.id === "gamebox" && gameList.length > 1) {
         showGame(gameIdx + 1, true);
         clearInterval(rotTimer);
@@ -689,7 +993,7 @@
     }
     if (k === "Enter" || k === " " || k === "NumpadEnter") { e.preventDefault(); return activate(document.activeElement); }
     if (k === "Escape" || k === "Backspace" || k === "GoBack" || k === "BrowserBack") { e.preventDefault(); return back(); }
-    if (k === "ContextMenu" || k === "e") { e.preventDefault(); return setEditing(!editing); }
+    if (k === "ContextMenu" || k === "e") { e.preventDefault(); return setAllApps(!allOpen); }
   });
 
 
@@ -766,10 +1070,11 @@
 
   // ---------- native hooks ----------
   window.onNativeBack = () => { if (pickerOpen) choose("brosi"); else back(); };
-  window.onNativeMenu = () => { if (!pickerOpen) setEditing(!editing); };
-  window.onNativeHome = () => { if (editing) setEditing(false); focusFirst(); };
+  window.onNativeMenu = () => { if (!pickerOpen) setAllApps(!allOpen); };
+  window.onNativeHome = () => { if (editing) setEditing(false); if (allOpen) setAllApps(false); Object.values(stacks).forEach((s) => (s.idx = 0)); renderHome(); focusFirst(); };
   window.onAppsChanged = () => { loadApps(); };
   window.onNativeResume = () => {
+    if (Date.now() - lastNews > 10 * 60000) loadNews();
     tickClock();
     if (Date.now() - lastWeather > 15 * 60000) loadWeather();
     if (Date.now() - lastGame > 60000) loadGame();
@@ -787,6 +1092,8 @@
   setInterval(tickClock, 1000);
   loadApps();
   renderDock();
+  loadNews();
+  loadMarkets(true);
   loadWeather();
   setInterval(loadWeather, 15 * 60000);
   loadGame();
