@@ -77,7 +77,7 @@
       $("w-temp").textContent = Math.round(d.current.temperature_2m) + "°";
       $("w-cond").textContent = WMO[d.current.weather_code] || "";
       $("weather").classList.add("ready");
-      $("w-range").textContent = "H " + Math.round(d.daily.temperature_2m_max[0]) + "°  L " + Math.round(d.daily.temperature_2m_min[0]) + "°" + (w.city ? "  ·  " + w.city : "");
+      $("w-range").textContent = "H " + Math.round(d.daily.temperature_2m_max[0]) + "°  L " + Math.round(d.daily.temperature_2m_min[0]) + "°";
     }).catch(() => {});
   }
 
