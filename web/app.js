@@ -635,11 +635,16 @@
     t = (t || "").replace(/\s+/g, " ").trim();
     return gn ? t.replace(/\s+[-–|]\s+[^-–|]{2,40}$/, "") : t; // Google News adds " - Publisher"
   }
-  function loadNews() {
+  let newsBusy = false;
+  function loadNews(force) {
+    if (newsBusy) return;
+    newsBusy = true;
+    const nbtn = $("news-refresh");
+    if (nbtn) nbtn.classList.add("spin");
     const NC = CFG.news || {};
     const cached = store.get("bh.c.news", null);
-    if (!lastNews && cached && Date.now() - cached.t < 6 * 3600000 && cached.v.length) { newsItems = cached.v; renderNews(false); }
-    Promise.all((NC.sources || []).map((s) => getText(s.url).then((xml) => {
+    if (!force && !lastNews && cached && Date.now() - cached.t < 6 * 3600000 && cached.v.length) { newsItems = cached.v; renderNews(false); }
+    Promise.all((NC.sources || []).map((s) => getText(s.url + (force ? (s.url.indexOf("?") >= 0 ? "&" : "?") + "_=" + Date.now() : "")).then((xml) => {
       const doc = new DOMParser().parseFromString(xml, "application/xml");
       return Array.from(doc.getElementsByTagName("item")).slice(0, 8).map((it) => ({
         src: s.tag,
@@ -666,6 +671,9 @@
         newsIdx = 0;
         renderNews(false);
       } else if (!newsItems.length) renderNews(false);
+      newsBusy = false;
+      if (nbtn) nbtn.classList.remove("spin");
+      if (force) hint(mixed.length ? "Headlines refreshed" : "Couldn't reach the news sources right now");
     });
     clearTimeout(loadNews._t);
     loadNews._t = setTimeout(loadNews, 10 * 60000);
@@ -940,6 +948,8 @@
       playVideo(el.dataset.vid);
     } else if (a === "ytrefresh") {
       loadYouTube(true);
+    } else if (a === "newsrefresh") {
+      loadNews(true);
     } else if (a === "game") {
       if (currentGame) openApp(appsFor(currentGame));
     } else if (a === "input") {
