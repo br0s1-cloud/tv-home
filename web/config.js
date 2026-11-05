@@ -1,6 +1,10 @@
 // Edit this file on GitHub to change what the TV shows.
 // Changes go live on the TV within ~10 minutes (or after a restart) — no reinstall.
 window.TV_CONFIG = {
+  // Brosi Home is the TV's default home, so skip the "Choose your experience" screen on wake.
+  // Set to true to bring the picker back. Google TV is always one press away (bottom bar).
+  wakePicker: false,
+
   weather: {
     city: "Washington, DC",
     lat: 38.8951,

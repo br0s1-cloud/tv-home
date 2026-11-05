@@ -813,6 +813,7 @@
     const sp = document.createElement("div");
     sp.className = "spacer";
     dock.appendChild(sp);
+    dock.appendChild(chip("Google TV", "googletv"));
     dock.appendChild(chip("All apps", "allapps"));
     dock.appendChild(chip("Settings", "settings"));
   }
@@ -948,6 +949,9 @@
       if (N) N.openSettings(); else hint("Preview: would open Settings");
     } else if (a === "edit") {
       setEditing(!editing);
+    } else if (a === "googletv") {
+      if (N && N.openStockHome) { if (!N.openStockHome()) hint("Google TV isn't available"); }
+      else hint("Preview: would open Google TV");
     } else if (a === "allapps") {
       setAllApps(true);
     } else if (a === "stack") {
@@ -1001,6 +1005,7 @@
   let pickerOpen = false, pickTimer = null, pickLeft = 0;
   const PICK_SECONDS = 10;
   function showPicker() {
+    if (CFG.wakePicker === false) { if (N && N.pickerDone) N.pickerDone(); focusFirst(); return; }
     const p = $("picker");
     const hr = new Date().getHours();
     $("pk-greet").textContent = (hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening") + ", Luke";
