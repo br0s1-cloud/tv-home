@@ -112,7 +112,7 @@ public class MainActivity extends Activity {
             usingFallback = true;
             web.loadUrl(ASSET_URL);
         } else {
-            web.loadUrl(remote + "?t=" + (System.currentTimeMillis() / 60000L));
+            web.loadUrl(remote);
         }
         web.requestFocus();
 
@@ -160,7 +160,7 @@ public class MainActivity extends Activity {
             pool.submit(() -> {
                 if (reachable(BuildConfig.UI_URL)) {
                     usingFallback = false;
-                    main.post(() -> web.loadUrl(BuildConfig.UI_URL + "?t=" + (System.currentTimeMillis() / 60000L)));
+                    main.post(() -> web.loadUrl(BuildConfig.UI_URL));
                 }
             });
         }
@@ -282,6 +282,21 @@ public class MainActivity extends Activity {
                 if (iconCache.containsKey(pkg)) return iconCache.get(pkg);
             }
             PackageManager pm = getPackageManager();
+            // Rendered icons are saved to disk per app version, so later launches skip the work.
+            java.io.File file = null;
+            try {
+                android.content.pm.PackageInfo pi = pm.getPackageInfo(pkg, 0);
+                long ver = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+                java.io.File dir = new java.io.File(getCacheDir(), "icons2");
+                if (!dir.exists()) dir.mkdirs();
+                file = new java.io.File(dir, pkg + "_" + ver + ".json");
+                if (file.exists()) {
+                    String s = new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+                    synchronized (iconCache) { iconCache.put(pkg, s); }
+                    return s;
+                }
+            } catch (Exception ignored) { }
+
             JSONObject o = new JSONObject();
             try {
                 Intent tv = pm.getLeanbackLaunchIntentForPackage(pkg);
@@ -293,25 +308,21 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) { }
                 if (icon == null) icon = pm.getApplicationIcon(pkg);
 
-                o.put("type", "icon");
-                o.put("src", drawableToDataUrl(icon, 256, 256));
                 if (Build.VERSION.SDK_INT >= 26 && icon instanceof AdaptiveIconDrawable) {
                     AdaptiveIconDrawable a = (AdaptiveIconDrawable) icon;
-                    if (a.getForeground() != null) o.put("fg", drawableToDataUrl(a.getForeground(), 324, 324));
-                    if (a.getBackground() != null) o.put("bg", drawableToDataUrl(a.getBackground(), 48, 48));
+                    if (a.getForeground() != null) o.put("fg", drawableToDataUrl(a.getForeground(), 216, 216));
+                    if (a.getBackground() != null) o.put("bg", drawableToDataUrl(a.getBackground(), 24, 24));
                 }
-
-                Drawable banner = null;
-                if (tv != null) {
-                    try { banner = pm.getActivityBanner(tv); } catch (Exception ignored) { }
-                }
-                if (banner == null) banner = pm.getApplicationBanner(pkg);
-                if (banner != null) o.put("banner", drawableToDataUrl(banner, 400, 0));
+                if (!o.has("fg")) o.put("src", drawableToDataUrl(icon, 160, 160));
+                o.put("type", "icon");
             } catch (Exception e) {
                 return "{}";
             }
             String s = o.toString();
             synchronized (iconCache) { iconCache.put(pkg, s); }
+            if (file != null) {
+                try { java.nio.file.Files.write(file.toPath(), s.getBytes(StandardCharsets.UTF_8)); } catch (Exception ignored) { }
+            }
             return s;
         }
 

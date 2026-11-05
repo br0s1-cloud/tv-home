@@ -72,12 +72,18 @@
     const url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon +
       "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min" +
       "&temperature_unit=" + (w.units || "fahrenheit") + "&timezone=auto&forecast_days=1";
-    getJSON(url).then((d) => {
-      lastWeather = Date.now();
+    const apply = (d) => {
       $("w-temp").textContent = Math.round(d.current.temperature_2m) + "°";
       $("w-cond").textContent = WMO[d.current.weather_code] || "";
       $("weather").classList.add("ready");
       $("w-range").textContent = "H " + Math.round(d.daily.temperature_2m_max[0]) + "°  L " + Math.round(d.daily.temperature_2m_min[0]) + "°";
+    };
+    const cached = store.get("bh.c.weather", null);
+    if (cached && Date.now() - cached.t < 3 * 3600000 && !lastWeather) { try { apply(cached.d); } catch (e) {} }
+    getJSON(url).then((d) => {
+      lastWeather = Date.now();
+      store.set("bh.c.weather", { t: Date.now(), d });
+      apply(d);
     }).catch(() => {});
   }
 
@@ -123,6 +129,8 @@
   function loadYouTube() {
     const yt = CFG.youtube || {};
     const chans = yt.channels || [];
+    const cachedYT = store.get("bh.c.yt", null);
+    if (cachedYT && !lastYT && Date.now() - cachedYT.t < 24 * 3600000) renderYouTube(cachedYT.v);
     $("yt-sub").textContent = chans.length + " channels";
     Promise.all(chans.map((c) =>
       resolveChannel(c).then((id) => getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + id)).then((xml) => {
@@ -147,7 +155,8 @@
       // Each channel's newest video, then the newest of those across channels.
       const newest = lists.map((l) => l.sort((a, b) => b.when - a.when)[0]).filter(Boolean);
       newest.sort((a, b) => b.when - a.when);
-      renderYouTube(newest.slice(0, yt.count || 3));
+      const pick = newest.slice(0, yt.count || 3);
+      if (pick.length || !cachedYT) { store.set("bh.c.yt", { t: Date.now(), v: pick }); renderYouTube(pick); }
     });
   }
   function renderYouTube(vids) {
@@ -190,6 +199,10 @@
   }
   function loadGame() {
     const G = CFG.games || {};
+    const cg = store.get("bh.c.games", null);
+    if (cg && !lastGame && Date.now() - cg.t < 5 * 60000 && cg.list && cg.list.length) {
+      gameList = cg.list; gameMode = cg.mode; showGame(0, false);
+    }
     const tomorrow = new Date(Date.now() + 86400000);
     const urls = [];
     (G.leagues || []).forEach((lg) => {
@@ -209,6 +222,7 @@
       gameMode = live.length ? "live" : "next";
       gameList = live.length ? live : next.slice(0, 1);
       gameIdx = Math.max(0, gameList.findIndex((g) => g.id === prevId));
+      store.set("bh.c.games", { t: Date.now(), list: gameList, mode: gameMode });
       showGame(gameIdx, false);
       clearInterval(rotTimer);
       if (gameList.length > 1) rotTimer = setInterval(() => showGame(gameIdx + 1, true), ((G.rotateSeconds || 10) * 1000));
@@ -736,6 +750,11 @@
     if (Date.now() - lastYT > 20 * 60000) loadYouTube();
     renderDock();
   };
+
+  // ---------- instant launch: keep the interface itself on the TV ----------
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch (e) {}
+  }
 
   // ---------- boot ----------
   tickClock();
