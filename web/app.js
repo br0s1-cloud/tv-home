@@ -30,7 +30,7 @@
         const id = "cb" + (++cbSeq);
         pending[id] = { resolve, reject };
         N.httpGet(url, id);
-        setTimeout(() => { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 15000);
+        setTimeout(() => { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 30000);
       });
     }
     return fetch(url).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); });
@@ -137,8 +137,13 @@
     const cachedYT = store.get("bh.c.yt", null);
     if (!force && cachedYT && !lastYT && Date.now() - cachedYT.t < 24 * 3600000) renderYouTube(cachedYT.v);
     $("yt-sub").textContent = chans.length + " channels";
+    const perChan = store.get("bh.c.ytch", {});
+    const feed = (id) => {
+      const url = "https://www.youtube.com/feeds/videos.xml?channel_id=" + id + (force ? "&_=" + Date.now() : "");
+      return getText(url).catch(() => new Promise((r) => setTimeout(r, 1500)).then(() => getText(url))); // YouTube feeds blip; retry once
+    };
     Promise.all(chans.map((c) =>
-      resolveChannel(c).then((id) => getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + id + (force ? "&_=" + Date.now() : ""))).then((xml) => {
+      resolveChannel(c).then(feed).then((xml) => {
         const doc = new DOMParser().parseFromString(xml, "application/xml");
         return Array.from(doc.getElementsByTagName("entry")).slice(0, 8).map((en) => {
           const vid = (en.getElementsByTagName("yt:videoId")[0] || {}).textContent;
@@ -154,13 +159,23 @@
             thumbAlt: thumb && thumb.getAttribute("url"),
           };
         }).filter((v) => v.id && !(yt.skipShorts !== false && v.short));
-      }).catch(() => [])
+      }).then((list) => {
+        if (list.length) perChan[c.name] = list.slice(0, 3);
+        return list.length ? list : (perChan[c.name] || []);
+      }).catch(() => perChan[c.name] || []) // use the last good videos for this channel
     )).then((lists) => {
       lastYT = Date.now();
       // Each channel's newest video, then the newest of those across channels.
-      const newest = lists.map((l) => l.sort((a, b) => b.when - a.when)[0]).filter(Boolean);
-      newest.sort((a, b) => b.when - a.when);
-      const pick = newest.slice(0, yt.count || 3);
+      store.set("bh.c.ytch", perChan);
+      const n = yt.count || 3;
+      lists.forEach((l) => l.sort((a, b) => b.when - a.when));
+      const newest = lists.map((l) => l[0]).filter(Boolean).sort((a, b) => b.when - a.when);
+      const pick = newest.slice(0, n);
+      // Fewer channels answered than boxes to fill: top up with their next-newest videos.
+      if (pick.length < n) {
+        const extra = [].concat.apply([], lists.map((l) => l.slice(1))).sort((a, b) => b.when - a.when);
+        extra.forEach((v) => { if (pick.length < n && !pick.some((p) => p.id === v.id)) pick.push(v); });
+      }
       if (pick.length || !cachedYT) { store.set("bh.c.yt", { t: Date.now(), v: pick }); renderYouTube(pick); }
       ytBusy = false;
       if (btn) btn.classList.remove("spin");

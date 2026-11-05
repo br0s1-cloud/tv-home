@@ -65,7 +65,7 @@ public class MainActivity extends Activity {
     private WebView web;
     private boolean usingFallback = false;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final ExecutorService pool = Executors.newFixedThreadPool(4);
+    private final ExecutorService pool = Executors.newFixedThreadPool(8);
     private final Map<String, String> iconCache = new HashMap<>();
     private BroadcastReceiver packageReceiver;
 
@@ -87,6 +87,8 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setAllowFileAccess(true);
+        // Layout is sized to the screen; ignore the TV's system font-size setting.
+        s.setTextZoom(100);
 
         web.addJavascriptInterface(new Bridge(), "Android");
         web.setWebViewClient(new WebViewClient() {

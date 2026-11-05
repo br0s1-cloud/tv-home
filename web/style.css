@@ -51,7 +51,8 @@ body > * { position: relative; z-index: 1; }
   height: 19.2vw;
 }
 
-.clock { display: flex; flex-direction: column; justify-content: center; }
+.clock { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.top > * { min-width: 0; }
 
 .time {
   font-size: 7vw;
