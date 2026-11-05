@@ -211,10 +211,7 @@
       const clip = document.createElement("div");
       clip.className = "clip";
       t.appendChild(clip);
-      const label = document.createElement("div");
-      label.className = "label";
-      label.textContent = app.label;
-      t.appendChild(label);
+      t.setAttribute("aria-label", app.label);
       const badge = document.createElement("div");
       badge.className = "badge";
       badge.textContent = "Hidden";
