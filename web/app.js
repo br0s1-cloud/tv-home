@@ -190,8 +190,10 @@
 
   function appByPkg(pkg) { return allApps.find((a) => a.pkg === pkg); }
 
+  let firstRender = true;
   function renderApps(focusPkg) {
     const grid = $("apps");
+    let idx = 0;
     const keep = focusPkg || (document.activeElement && document.activeElement.dataset && document.activeElement.dataset.pkg);
     grid.innerHTML = "";
     order.forEach((pkg) => {
@@ -200,7 +202,8 @@
       const isHidden = hidden.has(pkg);
       if (isHidden && !editing) return;
       const t = document.createElement("div");
-      t.className = "tile" + (isHidden ? " hidden-app" : "") + (picked === pkg ? " picked" : "");
+      t.className = "tile" + (isHidden ? " hidden-app" : "") + (picked === pkg ? " picked" : "") + (firstRender ? " enter" : "");
+      t.style.setProperty("--i", idx++);
       t.tabIndex = 0;
       t.dataset.nav = "1";
       t.dataset.pkg = pkg;
@@ -219,11 +222,39 @@
       paintTile(t, app);
       grid.appendChild(t);
     });
+    if (firstRender) setTimeout(() => grid.querySelectorAll(".enter").forEach((e) => e.classList.remove("enter")), 1400);
+    firstRender = false;
     if (keep) {
       const el = grid.querySelector('[data-pkg="' + CSS.escape(keep) + '"]');
       if (el) { focusEl(el); return; }
     }
     if (!document.activeElement || document.activeElement === document.body) focusFirst();
+  }
+
+  // Average color of an icon -> a deep tint behind it, so every tile reads as one big logo.
+  function tintFrom(src, cb) {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = c.height = 24;
+        const x = c.getContext("2d");
+        x.drawImage(img, 0, 0, 24, 24);
+        const d = x.getImageData(0, 0, 24, 24).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          const a = d[i + 3], mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+          if (a < 128 || (mx > 235 && mn > 235) || mx < 20) continue; // skip transparent, white, black
+          const w = 1 + (mx - mn) / 64; // favor saturated pixels
+          r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; n += w;
+        }
+        if (!n) return cb(null);
+        const k = 0.42; // darken for a premium, low-glare tile
+        cb("rgb(" + Math.round(r / n * k) + "," + Math.round(g / n * k) + "," + Math.round(b / n * k) + ")");
+      } catch (e) { cb(null); }
+    };
+    img.onerror = () => cb(null);
+    img.src = src;
   }
 
   function paintTile(t, app) {
@@ -234,21 +265,23 @@
         img.className = "banner";
         img.src = data.src;
         clip.insertBefore(img, clip.firstChild);
-      } else {
-        const wrap = document.createElement("div");
-        wrap.className = "iconwrap";
-        if (data && data.src) {
-          const img = document.createElement("img");
-          img.src = data.src;
-          wrap.appendChild(img);
-        }
-        const name = document.createElement("div");
-        name.className = "name";
-        name.textContent = app.label;
-        wrap.appendChild(name);
-        if (app.color) clip.style.background = app.color;
-        clip.insertBefore(wrap, clip.firstChild);
+        return;
       }
+      const logo = document.createElement("div");
+      logo.className = "logo";
+      if (data && data.src) {
+        const img = document.createElement("img");
+        img.src = data.src;
+        logo.appendChild(img);
+        tintFrom(data.src, (c) => { if (c) clip.style.setProperty("--tint", c); });
+      } else {
+        const word = document.createElement("div");
+        word.className = "word";
+        word.textContent = app.label;
+        logo.appendChild(word);
+      }
+      if (app.color) clip.style.setProperty("--tint", app.color);
+      clip.insertBefore(logo, clip.firstChild);
     };
     if (!N) return draw(null);
     if (iconData[app.pkg]) return draw(iconData[app.pkg]);
@@ -293,17 +326,46 @@
   }
 
   // ---------- focus + spatial navigation ----------
-  function focusEl(el) {
+  const TILT = { left: [0, -7, -40, 0], right: [0, 7, 40, 0], up: [7, 0, 0, -60], down: [-7, 0, 0, 20] };
+  function focusEl(el, dir) {
     if (!el) return;
     el.focus({ preventScroll: true });
-    // Keep focused tile visible inside the app area.
+    // tvOS-style: the card tilts toward where you came from, then settles.
+    const clip = el.querySelector && el.querySelector(".clip");
+    if (clip && dir && TILT[dir]) {
+      const [rx, ry, gx, gy] = TILT[dir];
+      clip.style.transition = "none";
+      clip.style.setProperty("--rx", rx + "deg");
+      clip.style.setProperty("--ry", ry + "deg");
+      clip.style.setProperty("--gx", gx);
+      clip.style.setProperty("--gy", gy);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clip.style.transition = "";
+        clip.style.setProperty("--rx", "0deg");
+        clip.style.setProperty("--ry", "0deg");
+        clip.style.setProperty("--gx", 0);
+        clip.style.setProperty("--gy", -30);
+      }));
+    }
+    // Keep the focused tile comfortably inside the app area.
     const main = document.querySelector("main");
     if (main.contains(el)) {
       const r = el.getBoundingClientRect(), m = main.getBoundingClientRect();
-      const pad = m.height * 0.12;
-      if (r.top < m.top + pad) main.scrollTop -= (m.top + pad - r.top);
-      else if (r.bottom > m.bottom - pad * 2) main.scrollTop += (r.bottom - (m.bottom - pad * 2));
+      const pad = m.height * 0.14;
+      let target = main.scrollTop;
+      if (r.top < m.top + pad) target -= (m.top + pad - r.top);
+      else if (r.bottom > m.bottom - pad * 2) target += (r.bottom - (m.bottom - pad * 2));
+      if (target !== main.scrollTop) main.scrollTo({ top: target, behavior: "smooth" });
     }
+  }
+  // Hitting an edge gives a little nudge instead of doing nothing.
+  function bump(el, dir) {
+    if (!el || !el.animate) return;
+    const d = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir];
+    const base = getComputedStyle(el).transform;
+    const off = "translate(" + d[0] * 0.5 + "vw," + d[1] * 0.5 + "vw) ";
+    el.animate([{ transform: base }, { transform: off + (base === "none" ? "" : base) }, { transform: base }],
+      { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
   }
   function focusFirst() {
     const el = document.querySelector("#apps .tile") || document.querySelector("[data-nav]");
@@ -330,7 +392,7 @@
       const score = primary + ortho * (dir === "left" || dir === "right" ? 6 : 1.4);
       if (score < bestScore) { bestScore = score; best = el; }
     });
-    if (best) focusEl(best);
+    if (best) focusEl(best, dir); else bump(cur, dir);
   }
 
   // ---------- edit mode ----------

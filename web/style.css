@@ -9,6 +9,7 @@
   --ring: rgba(255, 255, 255, 0.95);
   --pad: 4.2vw;
   --ease: cubic-bezier(.2, .8, .2, 1);
+  --spring: cubic-bezier(.34, 1.36, .64, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +33,11 @@ html, body {
     radial-gradient(50vw 35vw at -10% 110%, rgba(60, 60, 70, 0.25), transparent 70%);
   pointer-events: none;
   z-index: 0;
+  animation: drift 40s ease-in-out infinite alternate;
 }
+@keyframes drift { to { transform: translate3d(-3vw, 2vw, 0) scale(1.08); } }
+.top, .scores { animation: fadein 800ms var(--ease) both; }
+@keyframes fadein { from { opacity: 0; transform: translateY(-0.6vw); } }
 
 body > * { position: relative; z-index: 1; }
 
@@ -130,78 +135,121 @@ main {
   position: fixed;
   left: 0;
   right: 0;
-  top: 23vw;
+  top: 22.5vw;
   bottom: 6.6vw;
   overflow: hidden;
-  padding: 1.4vw var(--pad) 3vw;
-  -webkit-mask-image: linear-gradient(to bottom, #000 82%, transparent 100%);
-          mask-image: linear-gradient(to bottom, #000 82%, transparent 100%);
+  padding: 1.8vw var(--pad) 4vw;
+  -webkit-mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 84%, transparent 100%);
 }
 
 .apps {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 3vw 1.3vw;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3.2vw 1.8vw;
 }
 
+/* Tile = focus target (scale/lift). .clip = card face (tilt, gloss). */
 .tile {
   position: relative;
   aspect-ratio: 16 / 9;
-  border-radius: 0.9vw;
-  background: var(--card-2);
-  overflow: hidden;
+  border-radius: 1.1vw;
   outline: none;
-  transform: translateZ(0);
-  transition: transform 180ms var(--ease), box-shadow 180ms var(--ease), opacity 180ms;
+  perspective: 60vw;
+  transform: translateZ(0) scale(1);
+  transition: transform 340ms var(--spring), filter 340ms var(--ease), opacity 300ms;
+  will-change: transform;
+}
+
+.tile > .clip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  background: var(--tint, var(--card-2));
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 520ms var(--ease), box-shadow 340ms var(--ease);
+  box-shadow: 0 0.4vw 1vw rgba(0, 0, 0, 0.35);
+}
+
+/* Specular sheen, tvOS style */
+.tile > .clip::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.22), transparent 70%);
+  transform: translate(calc(var(--gx, 0) * 1%), calc(var(--gy, -30) * 1%));
+  opacity: 0;
+  transition: opacity 340ms var(--ease), transform 520ms var(--ease);
+  pointer-events: none;
 }
 
 .tile img.banner {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
 
-.tile .iconwrap {
+/* Logo-forward face for apps without a TV banner */
+.tile .logo {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.6vw;
 }
-.tile .iconwrap img { width: 3.6vw; height: 3.6vw; object-fit: contain; }
-.tile .iconwrap .name { font-size: 0.95vw; color: var(--text); padding: 0 0.6vw; text-align: center; }
+.tile .logo img { width: 42%; height: 62%; object-fit: contain; filter: drop-shadow(0 0.3vw 0.8vw rgba(0,0,0,0.35)); }
+.tile .logo .word {
+  font-size: 2.1vw;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #fff;
+  text-align: center;
+  padding: 0 1vw;
+  line-height: 1;
+}
 
 .tile .label {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: -2.2vw;
-  font-size: 0.95vw;
+  bottom: -2.5vw;
+  font-size: 1.05vw;
+  font-weight: 500;
   color: var(--text);
   text-align: center;
   opacity: 0;
-  transition: opacity 180ms;
+  transform: translateY(-0.4vw);
+  transition: opacity 260ms var(--ease), transform 340ms var(--spring);
 }
 
-.tile:focus, .tile.focus {
-  transform: scale(1.09);
-  box-shadow: 0 0 0 0.22vw var(--ring), 0 1.6vw 3vw rgba(0, 0, 0, 0.7);
+.tile:focus {
+  transform: translateZ(0) translateY(-0.5vw) scale(1.12);
   z-index: 3;
 }
+.tile:focus > .clip {
+  box-shadow: 0 2.2vw 3.6vw rgba(0, 0, 0, 0.75), 0 0 0 0.12vw rgba(255, 255, 255, 0.35);
+}
+.tile:focus > .clip::after { opacity: 1; }
+.tile:focus .label { opacity: 1; transform: none; }
 
-.apps .tile { overflow: visible; }
-.apps .tile > .clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
-.apps .tile:focus .label { opacity: 1; }
+/* When something has focus, gently recede everything else */
+.apps:focus-within .tile:not(:focus) { filter: brightness(0.78) saturate(0.9); }
+
+/* Boot-in */
+.tile.enter { animation: rise 620ms var(--ease) both; animation-delay: calc(var(--i, 0) * 35ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(1.6vw) scale(0.96); } }
 
 /* Edit mode */
 body.editing .tile.hidden-app { opacity: 0.28; }
 body.editing .tile.picked {
-  transform: scale(1.12) translateY(-0.5vw);
-  box-shadow: 0 0 0 0.3vw #0a84ff, 0 1.6vw 3vw rgba(0, 0, 0, 0.8);
+  transform: translateY(-0.9vw) scale(1.15);
+  animation: jiggle 900ms ease-in-out infinite;
 }
+body.editing .tile.picked > .clip { box-shadow: 0 0 0 0.3vw #0a84ff, 0 2.2vw 3.6vw rgba(0, 0, 0, 0.8); }
+@keyframes jiggle { 0%, 100% { rotate: -0.6deg; } 50% { rotate: 0.6deg; } }
 .tile .badge {
   position: absolute;
   top: 0.5vw;
@@ -212,6 +260,7 @@ body.editing .tile.picked {
   background: rgba(0, 0, 0, 0.75);
   color: var(--muted);
   display: none;
+  z-index: 2;
 }
 body.editing .tile.hidden-app .badge { display: block; }
 
@@ -234,12 +283,12 @@ body.editing .tile.hidden-app .badge { display: block; }
   font-size: 1vw;
   font-weight: 500;
   outline: none;
-  transition: transform 160ms var(--ease), background 160ms, color 160ms;
+  transition: transform 300ms var(--spring), background 200ms, color 200ms;
 }
 .chip:focus, .chip.focus {
   background: var(--text);
   color: #000;
-  transform: scale(1.06);
+  transform: scale(1.1);
 }
 .dock .spacer { flex: 1; }
 .dock .sep { width: 1px; height: 1.6vw; background: var(--faint); margin: 0 0.4vw; }
