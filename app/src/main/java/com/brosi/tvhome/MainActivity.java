@@ -148,7 +148,24 @@ public class MainActivity extends Activity {
     private void fallBack() {
         if (usingFallback) return;
         usingFallback = true;
+        // Show the built-in copy right away, then switch to the live version once Wi-Fi is back.
         main.post(() -> web.loadUrl(ASSET_URL));
+        scheduleRemoteRetry(4000);
+    }
+
+    private void scheduleRemoteRetry(long delayMs) {
+        if (BuildConfig.UI_URL == null || BuildConfig.UI_URL.isEmpty()) return;
+        main.postDelayed(() -> {
+            if (!usingFallback) return;
+            pool.submit(() -> {
+                if (reachable(BuildConfig.UI_URL)) {
+                    usingFallback = false;
+                    main.post(() -> web.loadUrl(BuildConfig.UI_URL));
+                } else {
+                    scheduleRemoteRetry(Math.min(delayMs * 2, 30000));
+                }
+            });
+        }, delayMs);
     }
 
     private void js(String code) {
