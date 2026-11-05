@@ -382,3 +382,12 @@ body.editing .tile.hidden-app .badge { display: block; }
 .pk-name { margin-top: 1.4vw; font-size: 1.5vw; font-weight: 600; }
 .pk-sub { margin-top: 0.3vw; font-size: 0.95vw; color: var(--muted); }
 .pk-count { margin-top: 3vw; font-size: 0.95vw; color: var(--muted); min-height: 1.2vw; }
+
+/* Game box rotation */
+#gamebox > * { transition: opacity 220ms var(--ease), transform 220ms var(--ease); }
+#gamebox.swap > * { opacity: 0; transform: translateY(0.4vw); }
+.gb-dots { margin-left: auto; display: inline-flex; gap: 0.35vw; align-items: center; }
+.gb-dots i { width: 0.4vw; height: 0.4vw; border-radius: 50%; background: rgba(255,255,255,0.28); transition: background 200ms, transform 200ms; }
+.gb-dots i.on { background: #fff; transform: scale(1.3); }
+.gb-watch { color: var(--text); font-weight: 600; }
+#gamebox:focus .gb-watch { text-decoration: underline; text-underline-offset: 0.25vw; }

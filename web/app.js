@@ -164,32 +164,52 @@
     if (!(N.openUrl && N.openUrl(url, "com.google.android.youtube.tv"))) hint("Couldn't open YouTube");
   }
 
-  // ---------- Live game: best live NFL/NBA game, else next big game ----------
-  let gameTimer, lastGame = 0, currentGame = null;
+  // ---------- Live games on your services (rotating), else the next one ----------
+  let gameTimer, rotTimer, lastGame = 0, currentGame = null, gameList = [], gameIdx = 0, gameMode = "live";
   function ymd(d) { return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0"); }
+  function netKey(name) {
+    // Exact (case-insensitive) match so "ESPN+" doesn't count as "ESPN".
+    const map = (CFG.games || {}).networkApps || {};
+    const n = String(name || "").trim().toLowerCase();
+    return Object.keys(map).find((k) => k.toLowerCase() === n) || null;
+  }
   function loadGame() {
     const G = CFG.games || {};
     const tomorrow = new Date(Date.now() + 86400000);
     const urls = [];
     (G.leagues || []).forEach((lg) => {
-      urls.push({ lg, url: "https://site.api.espn.com/apis/site/v2/sports/" + lg.sport + "/" + lg.league + "/scoreboard" });
-      if (lg.league === "nba") urls.push({ lg, url: "https://site.api.espn.com/apis/site/v2/sports/" + lg.sport + "/" + lg.league + "/scoreboard?dates=" + ymd(tomorrow) });
+      const base = "https://site.api.espn.com/apis/site/v2/sports/" + lg.sport + "/" + lg.league + "/scoreboard";
+      urls.push({ lg, url: base });
+      if (lg.league === "nba") urls.push({ lg, url: base + "?dates=" + ymd(tomorrow) });
     });
     Promise.all(urls.map((u) => getJSON(u.url).then((d) => (d.events || []).map((ev) => parseEvent(ev, u.lg))).catch(() => []))).then((lists) => {
       lastGame = Date.now();
       const seen = new Set();
-      const all = [].concat.apply([], lists).filter((g) => g && !seen.has(g.id) && seen.add(g.id));
+      const all = [].concat.apply([], lists)
+        .filter((g) => g && !seen.has(g.id) && seen.add(g.id))
+        .filter((g) => g.keys.length); // only games on your services
       const live = all.filter((g) => g.state === "in").sort((a, b) => b.rank - a.rank);
-      const next = all.filter((g) => g.state === "pre" && g.when > Date.now() - 600000)
-        .sort((a, b) => (b.national - a.national) || (a.when - b.when));
-      // "Next big game": soonest national-TV game, else soonest game.
-      const soonNational = next.filter((g) => g.national).sort((a, b) => a.when - b.when)[0];
-      const pick = live[0] || soonNational || next.sort((a, b) => a.when - b.when)[0] || null;
-      currentGame = pick;
-      renderGame(pick);
+      const next = all.filter((g) => g.state === "pre" && g.when > Date.now() - 600000).sort((a, b) => a.when - b.when);
+      const prevId = currentGame && currentGame.id;
+      gameMode = live.length ? "live" : "next";
+      gameList = live.length ? live : next.slice(0, 1);
+      gameIdx = Math.max(0, gameList.findIndex((g) => g.id === prevId));
+      showGame(gameIdx, false);
+      clearInterval(rotTimer);
+      if (gameList.length > 1) rotTimer = setInterval(() => showGame(gameIdx + 1, true), ((G.rotateSeconds || 10) * 1000));
       clearTimeout(gameTimer);
       gameTimer = setTimeout(loadGame, live.length ? 30000 : 300000);
     });
+  }
+  function showGame(i, animate) {
+    if (!gameList.length) { currentGame = null; return renderGame(null); }
+    gameIdx = ((i % gameList.length) + gameList.length) % gameList.length;
+    currentGame = gameList[gameIdx];
+    const box = $("gamebox");
+    if (animate && box.firstChild) {
+      box.classList.add("swap");
+      setTimeout(() => { renderGame(currentGame); box.classList.remove("swap"); }, 220);
+    } else renderGame(currentGame);
   }
   function parseEvent(ev, lg) {
     const c = ev.competitions && ev.competitions[0];
@@ -201,27 +221,32 @@
       score: x.score && typeof x.score === "object" ? x.score.displayValue : x.score,
       rec: x.records && x.records[0] && x.records[0].summary,
     }));
-    const geo = c.geoBroadcasts || [];
-    const nat = geo.find((b) => b.market && b.market.type === "National");
-    const network = (nat && nat.media && nat.media.shortName) ||
-      ((c.broadcasts || []).find((b) => b.market === "national") || {}).names?.[0] ||
-      ((c.broadcasts || [])[0] || {}).names?.[0] || (geo[0] && geo[0].media && geo[0].media.shortName) || "";
-    const national = !!nat || (c.broadcasts || []).some((b) => b.market === "national");
+    // Every network this game airs on, from both ESPN broadcast lists.
+    const nets = [];
+    (c.broadcasts || []).forEach((b) => (b.names || []).forEach((n) => nets.push(n)));
+    (c.geoBroadcasts || []).forEach((b) => b.media && b.media.shortName && nets.push(b.media.shortName));
+    const keys = Array.from(new Set(nets.map(netKey).filter(Boolean)));
+    const national = (c.broadcasts || []).some((b) => b.market === "national");
     const a = Number(sides[0] && sides[0].score) || 0, h = Number(sides[1] && sides[1].score) || 0;
     const period = (c.status && c.status.period) || 0;
-    // Prefer national TV, close scores, and late-game drama.
-    const rank = (national ? 40 : 0) - Math.abs(a - h) * 2 + period * 4;
+    const rank = (national ? 40 : 0) - Math.abs(a - h) * 2 + period * 4; // close, late, national first
     return {
       id: ev.id, league: lg.label || lg.league.toUpperCase(), lgKey: lg.league,
       state: st.state, detail: st.shortDetail || st.detail || "", when: Date.parse(ev.date),
-      sides, network, national, rank,
+      sides, keys, network: keys[0] || "", rank,
     };
   }
   function appsFor(game) {
-    const G = CFG.games || {};
-    const map = G.networkApps || {};
-    const key = Object.keys(map).find((k) => game.network && game.network.toUpperCase().indexOf(k.toUpperCase()) >= 0);
-    return (key ? map[key] : []).concat((G.leagueApps || {})[game.lgKey] || [], G.fallbackApps || []);
+    const map = (CFG.games || {}).networkApps || {};
+    return [].concat.apply([], (game.keys || []).map((k) => map[k] || []));
+  }
+  function serviceName(game) {
+    const installed = new Set(allApps.map((a) => a.pkg));
+    const pkg = appsFor(game).find((p) => installed.has(p)) || appsFor(game)[0];
+    const app = pkg && appByPkg(pkg);
+    if (app) return app.label;
+    return { "com.sling": "Sling", "com.peacocktv.peacockandroid": "Peacock", "com.amazon.amazonvideo.livingroom": "Prime Video",
+      "com.netflix.ninja": "Netflix", "com.gotv.nflgamecenter.us.lite": "NFL" }[pkg] || game.network;
   }
   function countdown(ms) {
     const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
@@ -239,7 +264,7 @@
       const head = el("div", "panel-head");
       head.appendChild(el("span", "panel-title", "Games"));
       box.appendChild(head);
-      box.appendChild(el("div", "yt-empty", "No NFL or NBA games scheduled"));
+      box.appendChild(el("div", "yt-empty", "No NFL or NBA games on your services right now"));
       return;
     }
     box.tabIndex = 0;
@@ -248,6 +273,11 @@
     const head = el("div", "panel-head");
     head.appendChild(el("span", "gb-pill " + (g.state === "in" ? "live" : "next"), g.state === "in" ? "LIVE" : "NEXT UP"));
     head.appendChild(el("span", "gb-league", g.league));
+    if (gameList.length > 1) {
+      const dots = el("span", "gb-dots");
+      gameList.forEach((_, k) => dots.appendChild(el("i", k === gameIdx ? "on" : "")));
+      head.appendChild(dots);
+    }
     box.appendChild(head);
     const teams = el("div", "gb-teams");
     const a = Number(g.sides[0] && g.sides[0].score), h = Number(g.sides[1] && g.sides[1].score);
@@ -271,7 +301,7 @@
         (today ? "Tonight " : when.toLocaleDateString(undefined, { weekday: "short" }) + " ") +
         when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) + " · " + countdown(g.when)));
     }
-    foot.appendChild(el("span", "", g.network || ""));
+    foot.appendChild(el("span", "gb-watch", "on " + serviceName(g) + " ›"));
     box.appendChild(foot);
   }
 
@@ -594,6 +624,12 @@
           if (hidden.has(picked)) hidden.delete(picked); else hidden.add(picked);
           return renderApps(picked);
         }
+      }
+      if (dir === "right" && document.activeElement && document.activeElement.id === "gamebox" && gameList.length > 1) {
+        showGame(gameIdx + 1, true);
+        clearInterval(rotTimer);
+        rotTimer = setInterval(() => showGame(gameIdx + 1, true), (((CFG.games || {}).rotateSeconds || 10) * 1000));
+        return;
       }
       return move(dir);
     }

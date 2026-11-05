@@ -18,34 +18,36 @@ window.TV_CONFIG = {
     ],
   },
 
-  // Right box: the best live NFL/NBA game, or the next big game with a countdown.
+  // Right box: every live NFL/NBA game on the services you pay for, rotating
+  // (~10s each; press Right on the box to skip). If nothing is live, the next one.
   games: {
     leagues: [
       { sport: "football",   league: "nfl", label: "NFL" },
       { sport: "basketball", league: "nba", label: "NBA" },
     ],
-    // Which app opens when you press OK on the game, by TV network (first installed wins).
+    rotateSeconds: 10,
+    // TV network (as ESPN lists it) -> the app(s) you'd watch it in. A game only shows
+    // if at least one of its networks is listed here. First installed app wins.
+    // Sling: Orange = ESPN/ESPN2/TNT/TBS/truTV; Blue = FOX/NBC (DC market)/FS1/USA/NFL Network.
     networkApps: {
-      "Prime":   ["com.amazon.amazonvideo.livingroom"],
-      "Netflix": ["com.netflix.ninja"],
-      "Peacock": ["com.peacocktv.peacockandroid"],
-      "NBC":     ["com.peacocktv.peacockandroid", "com.sling"],
-      "ESPN":    ["com.sling"],
-      "ABC":     ["com.sling"],
-      "TNT":     ["com.sling"],
-      "TBS":     ["com.sling"],
-      "truTV":   ["com.sling"],
-      "FOX":     ["com.sling"],
-      "FS1":     ["com.sling"],
-      "NFL Net": ["com.gotv.nflgamecenter.us.lite", "com.sling"],
-      "NBA TV":  ["com.nbaimd.gametime.nba2011", "com.sling"],
+      "Prime Video": ["com.amazon.amazonvideo.livingroom"],
+      "Prime":       ["com.amazon.amazonvideo.livingroom"],
+      "Netflix":     ["com.netflix.ninja"],
+      "Peacock":     ["com.peacocktv.peacockandroid"],
+      "NBC":         ["com.peacocktv.peacockandroid", "com.sling"],
+      "NFL Network": ["com.gotv.nflgamecenter.us.lite", "com.sling"],
+      "NFL Net":     ["com.gotv.nflgamecenter.us.lite", "com.sling"],
+      "NFL+":        ["com.gotv.nflgamecenter.us.lite"],
+      "ESPN":        ["com.sling"],
+      "ESPN2":       ["com.sling"],
+      "TNT":         ["com.sling"],
+      "TBS":         ["com.sling"],
+      "truTV":       ["com.sling"],
+      "FOX":         ["com.sling"],
+      "FS1":         ["com.sling"],
+      "USA Net":     ["com.sling"],
+      "NBA TV":      ["com.sling"],
     },
-    // Then the league's own app, then anything that can show live sports.
-    leagueApps: {
-      nfl: ["com.gotv.nflgamecenter.us.lite"],
-      nba: ["com.nbaimd.gametime.nba2011"],
-    },
-    fallbackApps: ["com.sling", "com.peacocktv.peacockandroid", "com.amazon.amazonvideo.livingroom"],
   },
 
   // First-run app order (by Android package name). Anything not listed
