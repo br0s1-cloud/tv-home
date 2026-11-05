@@ -13,6 +13,7 @@ window.TV_CONFIG = {
   youtube: {
     count: 3,
     channels: [
+      { id: "UCfpCQ89W9wjkHc8J_6eTbBg", name: "Outdoor Boys" },
       { id: "UCWJ2lWNubArHWmf3FIHbfcQ", name: "NBA" },
       { id: "UCDVYQ4Zhbm3S2dlz7P1GBDg", name: "NFL" },
     ],
