@@ -1,0 +1,70 @@
+name: Build & deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The TV UI (web/) is served from GitHub Pages so it updates without reinstalling.
+  pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  # The native shell only needs rebuilding when app/ changes, but building every push keeps it simple.
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Bundle UI as offline fallback
+        run: mkdir -p app/src/main/assets && cp -r web/. app/src/main/assets/
+
+      - name: Build APK
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          gradle --no-daemon :app:assembleRelease -PuiUrl="https://${OWNER}.github.io/${{ github.event.repository.name }}/"
+          cp app/build/outputs/apk/release/app-release.apk brosi-home.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brosi-home-apk
+          path: brosi-home.apk
+
+      - name: Publish as "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest brosi-home.apk \
+            --title "Brosi Home (build ${{ github.run_number }})" \
+            --notes "Install: adb install -r brosi-home.apk" \
+            --target "${{ github.sha }}"

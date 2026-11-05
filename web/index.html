@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brosi Home</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="top">
+    <div class="clock">
+      <div id="time" class="time">--:--</div>
+      <div id="date" class="date"></div>
+    </div>
+    <div class="weather" id="weather">
+      <div class="temp" id="w-temp">--°</div>
+      <div class="wmeta">
+        <div id="w-cond" class="cond"></div>
+        <div id="w-range" class="range"></div>
+      </div>
+    </div>
+  </header>
+
+  <section class="scores" id="scores" aria-label="Scores"></section>
+
+  <main>
+    <section class="apps" id="apps" aria-label="Apps"></section>
+  </main>
+
+  <nav class="dock" id="dock" aria-label="Controls"></nav>
+
+  <div class="hint" id="hint"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

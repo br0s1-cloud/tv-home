@@ -1,0 +1,381 @@
+package com.brosi.tvhome;
+
+import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.media.tv.TvContract;
+import android.media.tv.TvInputInfo;
+import android.media.tv.TvInputManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
+import android.util.Base64;
+import android.view.KeyEvent;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Brosi Home: a thin native shell. The whole UI is a web page (GitHub Pages,
+ * with a bundled offline copy). This class only exposes what a web page
+ * can't do on its own: list/launch apps, list/open HDMI inputs, open
+ * Settings, and fetch URLs without CORS limits.
+ */
+public class MainActivity extends Activity {
+
+    private static final String ASSET_URL = "file:///android_asset/index.html";
+
+    private WebView web;
+    private boolean usingFallback = false;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final ExecutorService pool = Executors.newFixedThreadPool(4);
+    private final Map<String, String> iconCache = new HashMap<>();
+    private BroadcastReceiver packageReceiver;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        web = new WebView(this);
+        web.setBackgroundColor(Color.BLACK);
+        web.setFocusable(true);
+        web.setFocusableInTouchMode(true);
+        setContentView(web);
+
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setAllowFileAccess(true);
+
+        web.addJavascriptInterface(new Bridge(), "Android");
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
+                // Only our own UI may load inside the launcher.
+                return !isOwnUrl(req.getUrl().toString());
+            }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest req, WebResourceError err) {
+                if (req.isForMainFrame()) fallBack();
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest req, WebResourceResponse resp) {
+                if (req.isForMainFrame() && resp.getStatusCode() >= 400) fallBack();
+            }
+        });
+
+        String remote = BuildConfig.UI_URL;
+        if (remote == null || remote.isEmpty()) {
+            usingFallback = true;
+            web.loadUrl(ASSET_URL);
+        } else {
+            web.loadUrl(remote + "?t=" + (System.currentTimeMillis() / 60000L));
+        }
+        web.requestFocus();
+
+        packageReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, Intent i) {
+                iconCache.clear();
+                js("window.onAppsChanged && window.onAppsChanged()");
+            }
+        };
+        IntentFilter f = new IntentFilter();
+        f.addAction(Intent.ACTION_PACKAGE_ADDED);
+        f.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        f.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        f.addDataScheme("package");
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(packageReceiver, f, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(packageReceiver, f);
+        }
+    }
+
+    private boolean isOwnUrl(String url) {
+        if (url.startsWith("file:///android_asset/")) return true;
+        String remote = BuildConfig.UI_URL;
+        return remote != null && !remote.isEmpty() && url.startsWith(remote);
+    }
+
+    private void fallBack() {
+        if (usingFallback) return;
+        usingFallback = true;
+        main.post(() -> web.loadUrl(ASSET_URL));
+    }
+
+    private void js(String code) {
+        main.post(() -> { if (web != null) web.evaluateJavascript(code, null); });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        js("window.onNativeResume && window.onNativeResume()");
+        // If we booted offline, try the live UI again once we're back on screen.
+        if (usingFallback && !BuildConfig.UI_URL.isEmpty()) {
+            pool.submit(() -> {
+                if (reachable(BuildConfig.UI_URL)) {
+                    usingFallback = false;
+                    main.post(() -> web.loadUrl(BuildConfig.UI_URL + "?t=" + (System.currentTimeMillis() / 60000L)));
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Home pressed while we're already in front.
+        js("window.onNativeHome && window.onNativeHome()");
+    }
+
+    @Override
+    public void onBackPressed() {
+        // A home screen never exits; let the UI decide what Back means.
+        js("window.onNativeBack && window.onNativeBack()");
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        int k = e.getKeyCode();
+        if (e.getAction() == KeyEvent.ACTION_DOWN && (k == KeyEvent.KEYCODE_MENU || k == KeyEvent.KEYCODE_SETTINGS)) {
+            js("window.onNativeMenu && window.onNativeMenu()");
+            return true;
+        }
+        return super.dispatchKeyEvent(e);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (packageReceiver != null) unregisterReceiver(packageReceiver);
+        pool.shutdownNow();
+        super.onDestroy();
+    }
+
+    private boolean reachable(String url) {
+        try {
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
+            c.setRequestMethod("HEAD");
+            int code = c.getResponseCode();
+            c.disconnect();
+            return code < 400;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private static String drawableToDataUrl(Drawable d, int maxW) {
+        Bitmap bmp;
+        if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
+            bmp = ((BitmapDrawable) d).getBitmap();
+        } else {
+            int w = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : 192;
+            int h = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 192;
+            bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bmp);
+            d.setBounds(0, 0, w, h);
+            d.draw(c);
+        }
+        if (bmp.getWidth() > maxW) {
+            int h = Math.round(bmp.getHeight() * (maxW / (float) bmp.getWidth()));
+            bmp = Bitmap.createScaledBitmap(bmp, maxW, Math.max(1, h), true);
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+        return "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+    }
+
+    /** Methods callable from JavaScript as window.Android.* */
+    private class Bridge {
+
+        @JavascriptInterface
+        public String getApps() {
+            PackageManager pm = getPackageManager();
+            JSONArray arr = new JSONArray();
+            Set<String> seen = new HashSet<>();
+            seen.add(getPackageName());
+            String[] categories = {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER};
+            for (String cat : categories) {
+                Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
+                List<ResolveInfo> list = pm.queryIntentActivities(q, 0);
+                for (ResolveInfo ri : list) {
+                    String pkg = ri.activityInfo.packageName;
+                    if (seen.contains(pkg)) continue;
+                    seen.add(pkg);
+                    try {
+                        JSONObject o = new JSONObject();
+                        o.put("pkg", pkg);
+                        o.put("label", ri.loadLabel(pm).toString());
+                        o.put("tv", Intent.CATEGORY_LEANBACK_LAUNCHER.equals(cat));
+                        arr.put(o);
+                    } catch (Exception ignored) { }
+                }
+            }
+            return arr.toString();
+        }
+
+        @JavascriptInterface
+        public String getIcon(String pkg) {
+            synchronized (iconCache) {
+                if (iconCache.containsKey(pkg)) return iconCache.get(pkg);
+            }
+            PackageManager pm = getPackageManager();
+            JSONObject o = new JSONObject();
+            try {
+                Drawable banner = null;
+                Intent tv = pm.getLeanbackLaunchIntentForPackage(pkg);
+                if (tv != null) {
+                    try { banner = pm.getActivityBanner(tv); } catch (Exception ignored) { }
+                }
+                if (banner == null) banner = pm.getApplicationBanner(pkg);
+                if (banner != null) {
+                    o.put("type", "banner");
+                    o.put("src", drawableToDataUrl(banner, 400));
+                } else {
+                    o.put("type", "icon");
+                    o.put("src", drawableToDataUrl(pm.getApplicationIcon(pkg), 192));
+                }
+            } catch (Exception e) {
+                return "{}";
+            }
+            String s = o.toString();
+            synchronized (iconCache) { iconCache.put(pkg, s); }
+            return s;
+        }
+
+        @JavascriptInterface
+        public boolean launch(String pkg) {
+            PackageManager pm = getPackageManager();
+            Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
+            if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+            if (i == null) return false;
+            final Intent go = i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            main.post(() -> {
+                try { startActivity(go); } catch (Exception ignored) { }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
+        public String getInputs() {
+            JSONArray arr = new JSONArray();
+            try {
+                TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+                if (tim == null) return "[]";
+                for (TvInputInfo info : tim.getTvInputList()) {
+                    if (!info.isPassthroughInput()) continue;
+                    if (info.isHidden(MainActivity.this)) continue;
+                    CharSequence custom = info.loadCustomLabel(MainActivity.this);
+                    CharSequence label = (custom != null && custom.length() > 0) ? custom : info.loadLabel(MainActivity.this);
+                    JSONObject o = new JSONObject();
+                    o.put("id", info.getId());
+                    o.put("label", label == null ? "Input" : label.toString());
+                    o.put("type", info.getType());
+                    arr.put(o);
+                }
+            } catch (Exception ignored) { }
+            return arr.toString();
+        }
+
+        @JavascriptInterface
+        public boolean openInput(String id) {
+            Uri uri = TvContract.buildChannelUriForPassthroughInput(id);
+            Intent i = new Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (i.resolveActivity(getPackageManager()) == null) return false;
+            main.post(() -> {
+                try { startActivity(i); } catch (Exception ignored) { }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
+        public void openSettings() {
+            main.post(() -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (Exception ignored) { }
+            });
+        }
+
+        @JavascriptInterface
+        public void httpGet(String url, String cbId) {
+            pool.submit(() -> {
+                String err = "";
+                String body = "";
+                try {
+                    if (!url.startsWith("https://")) throw new IllegalArgumentException("https only");
+                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                    c.setConnectTimeout(8000);
+                    c.setReadTimeout(10000);
+                    c.setRequestProperty("Accept", "application/json");
+                    int code = c.getResponseCode();
+                    InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while (in != null && (n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    body = out.toString(StandardCharsets.UTF_8.name());
+                    if (code >= 400) err = "HTTP " + code;
+                    c.disconnect();
+                } catch (Exception e) {
+                    err = String.valueOf(e.getMessage());
+                }
+                js("window.__nativeCb && window.__nativeCb(" + JSONObject.quote(cbId) + ","
+                        + JSONObject.quote(err) + "," + JSONObject.quote(body) + ")");
+            });
+        }
+
+        @JavascriptInterface
+        public String info() {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("version", BuildConfig.VERSION_NAME);
+                o.put("model", Build.MANUFACTURER + " " + Build.MODEL);
+                o.put("sdk", Build.VERSION.SDK_INT);
+                o.put("offline", usingFallback);
+                return o.toString();
+            } catch (Exception e) {
+                return "{}";
+            }
+        }
+    }
+}
