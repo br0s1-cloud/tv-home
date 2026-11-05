@@ -28,7 +28,7 @@ window.TV_CONFIG = {
     rotateSeconds: 10,
     // TV network (as ESPN lists it) -> the app(s) you'd watch it in. A game only shows
     // if at least one of its networks is listed here. First installed app wins.
-    // Sling: Orange = ESPN/ESPN2/TNT/TBS/truTV; Blue = FOX/NBC (DC market)/FS1/USA/NFL Network.
+    // Your Sling: Orange + Blue, both Sports Extras, and local FOX/NBC/ABC.
     networkApps: {
       "Prime Video": ["com.amazon.amazonvideo.livingroom"],
       "Prime":       ["com.amazon.amazonvideo.livingroom"],
@@ -44,6 +44,9 @@ window.TV_CONFIG = {
       "TBS":         ["com.sling"],
       "truTV":       ["com.sling"],
       "FOX":         ["com.sling"],
+      "ABC":         ["com.sling"],
+      "ESPNU":       ["com.sling"],
+      "ESPNEWS":     ["com.sling"],
       "FS1":         ["com.sling"],
       "USA Net":     ["com.sling"],
       "NBA TV":      ["com.sling"],
