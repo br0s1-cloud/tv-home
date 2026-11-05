@@ -821,7 +821,8 @@
     const sp = document.createElement("div");
     sp.className = "spacer";
     dock.appendChild(sp);
-    dock.appendChild(chip("Google TV", "googletv"));
+    const stockOn = !N || !N.stockHomeAvailable || N.stockHomeAvailable();
+    if (stockOn) dock.appendChild(chip("Google TV", "googletv"));
     dock.appendChild(chip("All apps", "allapps"));
     dock.appendChild(chip("Settings", "settings"));
   }

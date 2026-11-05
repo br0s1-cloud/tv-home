@@ -470,6 +470,16 @@ public class MainActivity extends Activity {
             return m;
         }
 
+        /** Whether Google's own home screen is installed and turned on. */
+        @JavascriptInterface
+        public boolean stockHomeAvailable() {
+            try {
+                return getPackageManager().getApplicationInfo(STOCK_HOME, 0).enabled;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
         /** Hand the screen over to the stock Google TV home. */
         @JavascriptInterface
         public boolean openStockHome() {
