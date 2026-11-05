@@ -126,14 +126,19 @@
     p = p.catch(() => find("https://www.youtube.com/results?search_query=" + encodeURIComponent(c.name) + "&sp=EgIQAg%253D%253D"));
     return p.then((id) => { cache[key] = id; store.set("bh.ytids", cache); return id; });
   }
-  function loadYouTube() {
+  let ytBusy = false;
+  function loadYouTube(force) {
+    if (ytBusy) return;
+    ytBusy = true;
+    const btn = $("yt-refresh");
+    if (btn) btn.classList.add("spin");
     const yt = CFG.youtube || {};
     const chans = yt.channels || [];
     const cachedYT = store.get("bh.c.yt", null);
-    if (cachedYT && !lastYT && Date.now() - cachedYT.t < 24 * 3600000) renderYouTube(cachedYT.v);
+    if (!force && cachedYT && !lastYT && Date.now() - cachedYT.t < 24 * 3600000) renderYouTube(cachedYT.v);
     $("yt-sub").textContent = chans.length + " channels";
     Promise.all(chans.map((c) =>
-      resolveChannel(c).then((id) => getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + id)).then((xml) => {
+      resolveChannel(c).then((id) => getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + id + (force ? "&_=" + Date.now() : ""))).then((xml) => {
         const doc = new DOMParser().parseFromString(xml, "application/xml");
         return Array.from(doc.getElementsByTagName("entry")).slice(0, 8).map((en) => {
           const vid = (en.getElementsByTagName("yt:videoId")[0] || {}).textContent;
@@ -157,6 +162,9 @@
       newest.sort((a, b) => b.when - a.when);
       const pick = newest.slice(0, yt.count || 3);
       if (pick.length || !cachedYT) { store.set("bh.c.yt", { t: Date.now(), v: pick }); renderYouTube(pick); }
+      ytBusy = false;
+      if (btn) btn.classList.remove("spin");
+      if (force) hint(pick.length ? "YouTube refreshed" : "Couldn't reach YouTube right now");
     });
   }
   function renderYouTube(vids) {
@@ -622,6 +630,8 @@
       else hint("Preview: would open " + (appByPkg(pkg) || {}).label);
     } else if (a === "video") {
       playVideo(el.dataset.vid);
+    } else if (a === "ytrefresh") {
+      loadYouTube(true);
     } else if (a === "game") {
       if (currentGame) openApp(appsFor(currentGame));
     } else if (a === "input") {

@@ -391,3 +391,20 @@ body.editing .tile.hidden-app .badge { display: block; }
 .gb-dots i.on { background: #fff; transform: scale(1.3); }
 .gb-watch { color: var(--text); font-weight: 600; }
 #gamebox:focus .gb-watch { text-decoration: underline; text-underline-offset: 0.25vw; }
+
+/* YouTube refresh button */
+.yt-refresh {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 0.35vw;
+  padding: 0.25vw 0.8vw;
+  border-radius: 99vw;
+  font-size: 0.8vw; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--muted);
+  background: rgba(255,255,255,0.06);
+  outline: none;
+  transition: transform 280ms var(--spring), background 200ms, color 200ms;
+}
+.yt-refresh i { font-style: normal; display: inline-block; font-size: 1vw; line-height: 1; }
+.yt-refresh:focus { background: var(--text); color: #000; transform: scale(1.1); }
+.yt-refresh.spin i { animation: ytspin 0.9s linear infinite; }
+@keyframes ytspin { to { transform: rotate(360deg); } }
