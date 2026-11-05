@@ -11,11 +11,21 @@ window.TV_CONFIG = {
   // Middle box: latest videos from these YouTube channels (newest first).
   // Find a channel ID: open the channel on youtube.com > About > Share > Copy channel ID.
   youtube: {
-    count: 3,
+    count: 3,          // videos shown (newest first, at most one per channel)
+    skipShorts: true,
+    // Use the channel ID (UC...) when known; otherwise a @handle or name is looked up once on the TV.
     channels: [
-      { id: "UCfpCQ89W9wjkHc8J_6eTbBg", name: "Outdoor Boys" },
-      { id: "UCWJ2lWNubArHWmf3FIHbfcQ", name: "NBA" },
+      { id: "UCTDMN4NwdZ0VVbvvjTTSqpA", name: "Tim Dillon Show Clips" },
+      { id: "UC-AQKm7HUNMmxjdS371MSwg", name: "Channel 5" },
       { id: "UCDVYQ4Zhbm3S2dlz7P1GBDg", name: "NFL" },
+      { id: "UCWJ2lWNubArHWmf3FIHbfcQ", name: "NBA" },
+      { id: "UCtG-elouHQdUnpN9cVLdltg", name: "A.M. Hoops" },
+      { id: "UC3M0vCYuGAEDy7SX1cWSqLw", name: "Higher Levels" },
+      { id: "UCfpCQ89W9wjkHc8J_6eTbBg", name: "Outdoor Boys" },
+      { id: "UCrvchO1h6lWZAuGaa1LqX9Q", name: "MoreMozi" },
+      { id: "UC-uhvujip5deVcEtLxnW8qg", name: "TLDR Global" },
+      { handle: "@TLDRbusiness", name: "TLDR Business" },
+      { handle: "@30MPC", name: "30 Minutes to President's Club" },
     ],
   },
 

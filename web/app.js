@@ -105,34 +105,49 @@
 
   // ---------- YouTube: latest from chosen channels (public RSS, no sign-in) ----------
   let lastYT = 0;
+  // Turn a @handle or name into a channel ID once, then remember it on the TV.
+  function resolveChannel(c) {
+    if (c.id) return Promise.resolve(c.id);
+    const cache = store.get("bh.ytids", {});
+    const key = c.handle || c.name;
+    if (cache[key]) return Promise.resolve(cache[key]);
+    const find = (url) => getText(url).then((html) => {
+      const m = html.match(/"(?:externalId|browseId|channelId)":"(UC[\w-]{22})"/) || html.match(/channel\/(UC[\w-]{22})/);
+      if (!m) throw new Error("no id");
+      return m[1];
+    });
+    let p = c.handle ? find("https://www.youtube.com/" + c.handle) : Promise.reject();
+    p = p.catch(() => find("https://www.youtube.com/results?search_query=" + encodeURIComponent(c.name) + "&sp=EgIQAg%253D%253D"));
+    return p.then((id) => { cache[key] = id; store.set("bh.ytids", cache); return id; });
+  }
   function loadYouTube() {
     const yt = CFG.youtube || {};
     const chans = yt.channels || [];
-    $("yt-sub").textContent = chans.map((c) => c.name).join(" · ");
+    $("yt-sub").textContent = chans.length + " channels";
     Promise.all(chans.map((c) =>
-      getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + c.id).then((xml) => {
+      resolveChannel(c).then((id) => getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + id)).then((xml) => {
         const doc = new DOMParser().parseFromString(xml, "application/xml");
-        return Array.from(doc.getElementsByTagName("entry")).slice(0, 6).map((en) => {
+        return Array.from(doc.getElementsByTagName("entry")).slice(0, 8).map((en) => {
           const vid = (en.getElementsByTagName("yt:videoId")[0] || {}).textContent;
+          const link = en.getElementsByTagName("link")[0];
           const thumb = en.getElementsByTagName("media:thumbnail")[0];
           return {
             id: vid,
             title: (en.getElementsByTagName("title")[0] || {}).textContent || "",
             when: Date.parse((en.getElementsByTagName("published")[0] || {}).textContent || "") || 0,
             channel: c.name,
+            short: !!(link && /\/shorts\//.test(link.getAttribute("href") || "")),
             thumb: "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg",
             thumbAlt: thumb && thumb.getAttribute("url"),
           };
-        }).filter((v) => v.id);
+        }).filter((v) => v.id && !(yt.skipShorts !== false && v.short));
       }).catch(() => [])
     )).then((lists) => {
       lastYT = Date.now();
-      // Newest first, but round-robin so one channel can't fill the row.
-      lists.forEach((l) => l.sort((a, b) => b.when - a.when));
-      const out = [];
-      for (let i = 0; out.length < (yt.count || 3) && i < 6; i++) lists.forEach((l) => { if (l[i] && out.length < (yt.count || 3)) out.push(l[i]); });
-      out.sort((a, b) => b.when - a.when);
-      renderYouTube(out);
+      // Each channel's newest video, then the newest of those across channels.
+      const newest = lists.map((l) => l.sort((a, b) => b.when - a.when)[0]).filter(Boolean);
+      newest.sort((a, b) => b.when - a.when);
+      renderYouTube(newest.slice(0, yt.count || 3));
     });
   }
   function renderYouTube(vids) {

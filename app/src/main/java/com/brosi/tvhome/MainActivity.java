@@ -379,7 +379,10 @@ public class MainActivity extends Activity {
                     HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                     c.setConnectTimeout(8000);
                     c.setReadTimeout(10000);
-                    c.setRequestProperty("Accept", "application/json");
+                    c.setRequestProperty("Accept", "application/json, text/html, application/xml;q=0.9, */*;q=0.8");
+                    // Some sites (YouTube) serve a stripped page to unknown clients.
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12; Smart TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36");
+                    c.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
                     int code = c.getResponseCode();
                     InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
                     ByteArrayOutputStream out = new ByteArrayOutputStream();
