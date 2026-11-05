@@ -13,17 +13,21 @@
     <div class="clock">
       <div id="time" class="time">--:--</div>
       <div id="date" class="date"></div>
-    </div>
-    <div class="weather" id="weather">
-      <div class="temp" id="w-temp">--°</div>
-      <div class="wmeta">
-        <div id="w-cond" class="cond"></div>
-        <div id="w-range" class="range"></div>
+      <div class="weather" id="weather">
+        <span class="temp" id="w-temp">--°</span>
+        <span class="wsep"></span>
+        <span id="w-cond" class="cond"></span>
+        <span id="w-range" class="range"></span>
       </div>
     </div>
-  </header>
 
-  <section class="scores" id="scores" aria-label="Scores"></section>
+    <section class="panel yt" id="yt" aria-label="YouTube">
+      <div class="panel-head"><span class="panel-title">YouTube</span><span class="panel-sub" id="yt-sub"></span></div>
+      <div class="yt-row" id="yt-row"></div>
+    </section>
+
+    <section class="panel gamebox" id="gamebox" aria-label="Live game"></section>
+  </header>
 
   <main>
     <section class="apps" id="apps" aria-label="Apps"></section>

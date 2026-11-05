@@ -36,21 +36,25 @@ html, body {
   animation: drift 40s ease-in-out infinite alternate;
 }
 @keyframes drift { to { transform: translate3d(-3vw, 2vw, 0) scale(1.08); } }
-.top, .scores { animation: fadein 800ms var(--ease) both; }
+.top .clock { animation: fadein 800ms var(--ease) both; }
 @keyframes fadein { from { opacity: 0; transform: translateY(-0.6vw); } }
 
 body > * { position: relative; z-index: 1; }
 
-/* ---------- Top: clock + weather ---------- */
+/* ---------- Top row: clock | YouTube | live game ---------- */
 .top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3.6vw var(--pad) 0;
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1.05fr;
+  gap: 2vw;
+  align-items: stretch;
+  padding: 3.2vw var(--pad) 0;
+  height: 19.2vw;
 }
 
+.clock { display: flex; flex-direction: column; justify-content: center; }
+
 .time {
-  font-size: 7.4vw;
+  font-size: 7vw;
   font-weight: 200;
   letter-spacing: -0.04em;
   line-height: 0.95;
@@ -58,79 +62,91 @@ body > * { position: relative; z-index: 1; }
 }
 
 .date {
-  margin-top: 0.7vw;
-  font-size: 1.45vw;
+  margin-top: 0.6vw;
+  font-size: 1.35vw;
   color: var(--muted);
-  font-weight: 400;
 }
 
+/* Compact weather line under the date */
 .weather {
+  margin-top: 1vw;
+  display: flex;
+  align-items: baseline;
+  gap: 0.7vw;
+  font-size: 1.1vw;
   opacity: 0;
   transition: opacity 400ms;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  /* Offsets the date line so the block centers on the clock digits */
-  margin-bottom: 2.3vw;
-}
-
-.temp {
-  font-size: 5.6vw;
-  font-weight: 200;
-  letter-spacing: -0.04em;
-  line-height: 0.95;
-  font-variant-numeric: tabular-nums;
-}
-
-.wmeta { display: flex; flex-direction: column; align-items: center; gap: 0.25vw; margin-top: 0.6vw; }
-.cond  { font-size: 1.3vw; font-weight: 500; }
-.range { font-size: 1.1vw; color: var(--muted); }
-
-/* ---------- Scores ---------- */
-.scores {
-  display: flex;
-  gap: 1vw;
-  padding: 2.4vw var(--pad) 0;
-  min-height: 5.4vw;
-  overflow: hidden;
-}
-
-.game {
-  display: flex;
-  align-items: center;
-  gap: 0.9vw;
-  padding: 0.75vw 1.2vw;
-  background: var(--card);
-  border-radius: 0.9vw;
-  font-size: 1.05vw;
   white-space: nowrap;
 }
+.weather.ready { opacity: 1; }
+.weather .temp { font-size: 1.7vw; font-weight: 300; letter-spacing: -0.02em; }
+.weather .wsep { width: 1px; height: 1.1vw; background: var(--faint); align-self: center; }
+.weather .cond { font-weight: 500; }
+.weather .range { color: var(--muted); }
 
-.game .teams { display: flex; flex-direction: column; gap: 0.2vw; }
-.game .row   { display: flex; justify-content: space-between; gap: 1.4vw; font-variant-numeric: tabular-nums; }
-.game .row.win { font-weight: 600; }
-.game .row.lose { color: var(--muted); }
-.game .abbr  { font-weight: 600; letter-spacing: 0.02em; }
-.game .status {
-  font-size: 0.85vw;
-  color: var(--muted);
-  padding-left: 0.9vw;
-  border-left: 1px solid var(--faint);
-  line-height: 1.35;
+/* Shared panel look */
+.panel {
+  position: relative;
+  border-radius: 1.2vw;
+  background: rgba(28, 28, 31, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1.1vw 1.2vw;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  animation: fadein 800ms var(--ease) both;
 }
-.game.live .status { color: var(--live); font-weight: 600; }
-.game.live .status::before {
-  content: "";
-  display: inline-block;
-  width: 0.45vw;
-  height: 0.45vw;
-  margin-right: 0.4vw;
-  border-radius: 50%;
-  background: var(--live);
-  vertical-align: middle;
-  animation: pulse 1.6s ease-in-out infinite;
+.panel-head { display: flex; align-items: baseline; gap: 0.7vw; margin-bottom: 0.8vw; }
+.panel-title { font-size: 0.85vw; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.panel-sub { font-size: 0.85vw; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* YouTube */
+.yt-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9vw; flex: 1; min-height: 0; }
+.vid { outline: none; min-width: 0; transition: transform 320ms var(--spring); }
+.vid .thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.7vw;
+  overflow: hidden;
+  background: var(--card-2);
+  box-shadow: 0 0.4vw 1vw rgba(0, 0, 0, 0.35);
+  transition: box-shadow 320ms var(--ease);
 }
+.vid .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vid .vt {
+  margin-top: 0.55vw;
+  font-size: 0.82vw;
+  line-height: 1.3;
+  font-weight: 500;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.vid .vm { margin-top: 0.2vw; font-size: 0.72vw; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid:focus { transform: translateY(0.2vw) scale(1.05); z-index: 3; }
+.vid:focus .thumb { box-shadow: 0 1.4vw 2.6vw rgba(0, 0, 0, 0.75), 0 0 0 0.15vw rgba(255, 255, 255, 0.85); }
+.yt-empty { color: var(--muted); font-size: 0.95vw; align-self: center; grid-column: 1 / -1; }
+
+/* Live game */
+.gamebox { outline: none; transition: transform 320ms var(--spring), box-shadow 320ms var(--ease), background 300ms; }
+.gamebox:focus { transform: scale(1.04); background: rgba(44, 44, 48, 0.8); box-shadow: 0 1.6vw 3vw rgba(0, 0, 0, 0.7), 0 0 0 0.15vw rgba(255, 255, 255, 0.8); z-index: 3; }
+.gb-pill { display: inline-flex; align-items: center; gap: 0.4vw; font-size: 0.75vw; font-weight: 700; letter-spacing: 0.1em; padding: 0.25vw 0.6vw; border-radius: 99vw; }
+.gb-pill.live { background: rgba(255, 69, 58, 0.16); color: var(--live); }
+.gb-pill.live::before { content: ""; width: 0.45vw; height: 0.45vw; border-radius: 50%; background: var(--live); animation: pulse 1.6s ease-in-out infinite; }
+.gb-pill.next { background: rgba(255, 255, 255, 0.08); color: var(--muted); }
+.gb-league { margin-left: auto; font-size: 0.8vw; color: var(--muted); font-weight: 600; letter-spacing: 0.08em; }
+.gb-teams { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0.5vw; }
+.gb-team { display: flex; align-items: center; gap: 0.8vw; }
+.gb-team img { width: 2.3vw; height: 2.3vw; object-fit: contain; }
+.gb-team .ab { font-size: 1.3vw; font-weight: 600; letter-spacing: 0.02em; }
+.gb-team .rec { font-size: 0.75vw; color: var(--muted); }
+.gb-team .pts { margin-left: auto; font-size: 2vw; font-weight: 300; font-variant-numeric: tabular-nums; }
+.gb-team.lead .pts { font-weight: 500; }
+.gb-team.trail { opacity: 0.6; }
+.gb-foot { display: flex; justify-content: space-between; font-size: 0.85vw; color: var(--muted); }
+.gb-foot .clock-txt { color: var(--text); font-weight: 600; }
+.gb-count { font-size: 1.7vw; font-weight: 300; letter-spacing: -0.02em; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 
 /* ---------- Apps ---------- */
@@ -138,7 +154,7 @@ main {
   position: fixed;
   left: 0;
   right: 0;
-  top: 22.5vw;
+  top: 21.6vw;
   bottom: 6.6vw;
   overflow: hidden;
   padding: 1.8vw var(--pad) 4vw;

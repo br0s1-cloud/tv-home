@@ -397,6 +397,23 @@ public class MainActivity extends Activity {
             });
         }
 
+        /** Open a web link in a specific app, e.g. a YouTube video in the YouTube TV app. */
+        @JavascriptInterface
+        public boolean openUrl(String url, String pkg) {
+            if (url == null || !url.startsWith("https://")) return false;
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (pkg != null && !pkg.isEmpty()) {
+                i.setPackage(pkg);
+                if (i.resolveActivity(getPackageManager()) == null) i.setPackage(null);
+            }
+            if (i.resolveActivity(getPackageManager()) == null) return false;
+            final Intent go = i;
+            main.post(() -> {
+                try { startActivity(go); } catch (Exception ignored) { }
+            });
+            return true;
+        }
+
         /** "pick" once if we were opened by the wake/boot listener, else "". */
         @JavascriptInterface
         public String takeLaunchMode() {

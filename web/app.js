@@ -24,17 +24,18 @@
     delete pending[id];
     if (err) p.reject(new Error(err)); else p.resolve(body);
   };
-  function getJSON(url) {
+  function getText(url) {
     if (N && N.httpGet) {
       return new Promise((resolve, reject) => {
         const id = "cb" + (++cbSeq);
         pending[id] = { resolve, reject };
         N.httpGet(url, id);
         setTimeout(() => { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 15000);
-      }).then(JSON.parse);
+      });
     }
-    return fetch(url).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    return fetch(url).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); });
   }
+  function getJSON(url) { return getText(url).then(JSON.parse); }
 
   // ---------- hint toast ----------
   let hintTimer;
@@ -74,80 +75,204 @@
     getJSON(url).then((d) => {
       lastWeather = Date.now();
       $("w-temp").textContent = Math.round(d.current.temperature_2m) + "°";
-      $("w-cond").textContent = (WMO[d.current.weather_code] || "") + (w.city ? " · " + w.city : "");
+      $("w-cond").textContent = WMO[d.current.weather_code] || "";
       $("weather").classList.add("ready");
-      $("w-range").textContent = "H " + Math.round(d.daily.temperature_2m_max[0]) + "°  L " + Math.round(d.daily.temperature_2m_min[0]) + "°";
+      $("w-range").textContent = "H " + Math.round(d.daily.temperature_2m_max[0]) + "°  L " + Math.round(d.daily.temperature_2m_min[0]) + "°" + (w.city ? "  ·  " + w.city : "");
     }).catch(() => {});
   }
 
-  // ---------- scores (ESPN public JSON) ----------
-  let scoresTimer, lastScores = 0;
-  function scoreOf(c) {
-    if (c.score == null) return null;
-    if (typeof c.score === "object") return c.score.displayValue != null ? c.score.displayValue : c.score.value;
-    return c.score;
+  // ---------- helpers ----------
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
   }
-  function loadScores() {
-    const teams = CFG.teams || [];
-    const windowMs = (CFG.scoreWindowDays || 4) * 86400000;
-    Promise.all(teams.map((t) => {
-      const url = "https://site.api.espn.com/apis/site/v2/sports/" + t.sport + "/" + t.league + "/teams/" + t.abbr;
-      return getJSON(url).then((d) => {
-        const ev = d.team && d.team.nextEvent && d.team.nextEvent[0];
-        if (!ev || !ev.competitions || !ev.competitions[0]) return null;
-        const comp = ev.competitions[0];
-        const st = (comp.status && comp.status.type) || {};
-        const when = new Date(ev.date).getTime();
-        if (Math.abs(when - Date.now()) > windowMs && st.state !== "in") return null;
-        const sides = (comp.competitors || []).slice().sort((a, b) => (a.homeAway === "away" ? -1 : 1));
-        return {
-          state: st.state || "pre",
-          detail: st.shortDetail || st.detail || "",
-          when,
-          league: t.league.toUpperCase(),
-          sides: sides.map((c) => ({
-            abbr: (c.team && c.team.abbreviation) || "",
-            score: scoreOf(c),
-            winner: !!c.winner,
-          })),
-        };
-      }).catch(() => null);
-    })).then((games) => {
-      lastScores = Date.now();
-      games = games.filter(Boolean);
-      const rank = { in: 0, post: 1, pre: 2 };
-      games.sort((a, b) => (rank[a.state] - rank[b.state]) || (a.when - b.when));
-      renderScores(games);
-      clearTimeout(scoresTimer);
-      const anyLive = games.some((g) => g.state === "in");
-      scoresTimer = setTimeout(loadScores, anyLive ? 45000 : 600000);
+  function ago(ms) {
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 60) return m + "m ago";
+    const h = Math.round(m / 60);
+    if (h < 24) return h + "h ago";
+    const d = Math.round(h / 24);
+    return d + "d ago";
+  }
+  function openApp(pkgs) {
+    const installed = new Set(allApps.map((a) => a.pkg));
+    const pkg = (pkgs || []).find((p) => installed.has(p));
+    if (!N) return hint("Preview: would open " + ((pkgs || [])[0] || "app"));
+    if (!pkg || !N.launch(pkg)) hint("None of the apps for this game are installed");
+  }
+
+  // ---------- YouTube: latest from chosen channels (public RSS, no sign-in) ----------
+  let lastYT = 0;
+  function loadYouTube() {
+    const yt = CFG.youtube || {};
+    const chans = yt.channels || [];
+    $("yt-sub").textContent = chans.map((c) => c.name).join(" · ");
+    Promise.all(chans.map((c) =>
+      getText("https://www.youtube.com/feeds/videos.xml?channel_id=" + c.id).then((xml) => {
+        const doc = new DOMParser().parseFromString(xml, "application/xml");
+        return Array.from(doc.getElementsByTagName("entry")).slice(0, 6).map((en) => {
+          const vid = (en.getElementsByTagName("yt:videoId")[0] || {}).textContent;
+          const thumb = en.getElementsByTagName("media:thumbnail")[0];
+          return {
+            id: vid,
+            title: (en.getElementsByTagName("title")[0] || {}).textContent || "",
+            when: Date.parse((en.getElementsByTagName("published")[0] || {}).textContent || "") || 0,
+            channel: c.name,
+            thumb: "https://i.ytimg.com/vi/" + vid + "/hqdefault.jpg",
+            thumbAlt: thumb && thumb.getAttribute("url"),
+          };
+        }).filter((v) => v.id);
+      }).catch(() => [])
+    )).then((lists) => {
+      lastYT = Date.now();
+      // Newest first, but round-robin so one channel can't fill the row.
+      lists.forEach((l) => l.sort((a, b) => b.when - a.when));
+      const out = [];
+      for (let i = 0; out.length < (yt.count || 3) && i < 6; i++) lists.forEach((l) => { if (l[i] && out.length < (yt.count || 3)) out.push(l[i]); });
+      out.sort((a, b) => b.when - a.when);
+      renderYouTube(out);
     });
   }
-  function renderScores(games) {
-    const box = $("scores");
+  function renderYouTube(vids) {
+    const row = $("yt-row");
+    const keep = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.vid;
+    row.innerHTML = "";
+    if (!vids.length) { row.appendChild(el("div", "yt-empty", "Couldn't load videos right now")); return; }
+    vids.forEach((v) => {
+      const t = el("div", "vid");
+      t.tabIndex = 0;
+      t.dataset.nav = "1";
+      t.dataset.action = "video";
+      t.dataset.vid = v.id;
+      const th = el("div", "thumb");
+      const img = new Image();
+      img.src = v.thumb;
+      img.onerror = () => { if (v.thumbAlt && img.src !== v.thumbAlt) img.src = v.thumbAlt; };
+      th.appendChild(img);
+      t.appendChild(th);
+      t.appendChild(el("div", "vt", v.title));
+      t.appendChild(el("div", "vm", v.channel + " · " + ago(v.when)));
+      row.appendChild(t);
+    });
+    if (keep) { const k = row.querySelector('[data-vid="' + keep + '"]'); if (k) k.focus({ preventScroll: true }); }
+  }
+  function playVideo(id) {
+    const url = "https://www.youtube.com/watch?v=" + id;
+    if (!N) return hint("Preview: would play " + url);
+    if (!(N.openUrl && N.openUrl(url, "com.google.android.youtube.tv"))) hint("Couldn't open YouTube");
+  }
+
+  // ---------- Live game: best live NFL/NBA game, else next big game ----------
+  let gameTimer, lastGame = 0, currentGame = null;
+  function ymd(d) { return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0"); }
+  function loadGame() {
+    const G = CFG.games || {};
+    const tomorrow = new Date(Date.now() + 86400000);
+    const urls = [];
+    (G.leagues || []).forEach((lg) => {
+      urls.push({ lg, url: "https://site.api.espn.com/apis/site/v2/sports/" + lg.sport + "/" + lg.league + "/scoreboard" });
+      if (lg.league === "nba") urls.push({ lg, url: "https://site.api.espn.com/apis/site/v2/sports/" + lg.sport + "/" + lg.league + "/scoreboard?dates=" + ymd(tomorrow) });
+    });
+    Promise.all(urls.map((u) => getJSON(u.url).then((d) => (d.events || []).map((ev) => parseEvent(ev, u.lg))).catch(() => []))).then((lists) => {
+      lastGame = Date.now();
+      const seen = new Set();
+      const all = [].concat.apply([], lists).filter((g) => g && !seen.has(g.id) && seen.add(g.id));
+      const live = all.filter((g) => g.state === "in").sort((a, b) => b.rank - a.rank);
+      const next = all.filter((g) => g.state === "pre" && g.when > Date.now() - 600000)
+        .sort((a, b) => (b.national - a.national) || (a.when - b.when));
+      // "Next big game": soonest national-TV game, else soonest game.
+      const soonNational = next.filter((g) => g.national).sort((a, b) => a.when - b.when)[0];
+      const pick = live[0] || soonNational || next.sort((a, b) => a.when - b.when)[0] || null;
+      currentGame = pick;
+      renderGame(pick);
+      clearTimeout(gameTimer);
+      gameTimer = setTimeout(loadGame, live.length ? 30000 : 300000);
+    });
+  }
+  function parseEvent(ev, lg) {
+    const c = ev.competitions && ev.competitions[0];
+    if (!c) return null;
+    const st = (c.status && c.status.type) || {};
+    const sides = (c.competitors || []).slice().sort((a) => (a.homeAway === "away" ? -1 : 1)).map((x) => ({
+      ab: (x.team && x.team.abbreviation) || "",
+      logo: (x.team && x.team.logo) || "",
+      score: x.score && typeof x.score === "object" ? x.score.displayValue : x.score,
+      rec: x.records && x.records[0] && x.records[0].summary,
+    }));
+    const geo = c.geoBroadcasts || [];
+    const nat = geo.find((b) => b.market && b.market.type === "National");
+    const network = (nat && nat.media && nat.media.shortName) ||
+      ((c.broadcasts || []).find((b) => b.market === "national") || {}).names?.[0] ||
+      ((c.broadcasts || [])[0] || {}).names?.[0] || (geo[0] && geo[0].media && geo[0].media.shortName) || "";
+    const national = !!nat || (c.broadcasts || []).some((b) => b.market === "national");
+    const a = Number(sides[0] && sides[0].score) || 0, h = Number(sides[1] && sides[1].score) || 0;
+    const period = (c.status && c.status.period) || 0;
+    // Prefer national TV, close scores, and late-game drama.
+    const rank = (national ? 40 : 0) - Math.abs(a - h) * 2 + period * 4;
+    return {
+      id: ev.id, league: lg.label || lg.league.toUpperCase(), lgKey: lg.league,
+      state: st.state, detail: st.shortDetail || st.detail || "", when: Date.parse(ev.date),
+      sides, network, national, rank,
+    };
+  }
+  function appsFor(game) {
+    const G = CFG.games || {};
+    const map = G.networkApps || {};
+    const key = Object.keys(map).find((k) => game.network && game.network.toUpperCase().indexOf(k.toUpperCase()) >= 0);
+    return (key ? map[key] : []).concat((G.leagueApps || {})[game.lgKey] || [], G.fallbackApps || []);
+  }
+  function countdown(ms) {
+    const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+    if (m < 60) return "in " + m + "m";
+    const h = Math.floor(m / 60);
+    if (h < 24) return "in " + h + "h " + (m % 60) + "m";
+    return "in " + Math.round(h / 24) + "d";
+  }
+  function renderGame(g) {
+    const box = $("gamebox");
     box.innerHTML = "";
-    games.forEach((g) => {
-      const el = document.createElement("div");
-      el.className = "game" + (g.state === "in" ? " live" : "");
-      const teams = document.createElement("div");
-      teams.className = "teams";
-      const showScore = g.state !== "pre";
-      g.sides.forEach((s) => {
-        const row = document.createElement("div");
-        row.className = "row" + (g.state === "post" ? (s.winner ? " win" : " lose") : "");
-        row.innerHTML = '<span class="abbr"></span><span class="pts"></span>';
-        row.children[0].textContent = s.abbr;
-        row.children[1].textContent = showScore && s.score != null ? s.score : "";
-        teams.appendChild(row);
-      });
-      const status = document.createElement("div");
-      status.className = "status";
-      status.textContent = g.state === "in" ? g.detail : g.league + "\n" + g.detail;
-      status.style.whiteSpace = "pre";
-      el.appendChild(teams);
-      el.appendChild(status);
-      box.appendChild(el);
+    if (!g) {
+      box.removeAttribute("tabindex");
+      delete box.dataset.nav;
+      const head = el("div", "panel-head");
+      head.appendChild(el("span", "panel-title", "Games"));
+      box.appendChild(head);
+      box.appendChild(el("div", "yt-empty", "No NFL or NBA games scheduled"));
+      return;
+    }
+    box.tabIndex = 0;
+    box.dataset.nav = "1";
+    box.dataset.action = "game";
+    const head = el("div", "panel-head");
+    head.appendChild(el("span", "gb-pill " + (g.state === "in" ? "live" : "next"), g.state === "in" ? "LIVE" : "NEXT UP"));
+    head.appendChild(el("span", "gb-league", g.league));
+    box.appendChild(head);
+    const teams = el("div", "gb-teams");
+    const a = Number(g.sides[0] && g.sides[0].score), h = Number(g.sides[1] && g.sides[1].score);
+    g.sides.forEach((s, i) => {
+      const row = el("div", "gb-team");
+      if (g.state === "in" && a !== h) row.classList.add((i === 0 ? a > h : h > a) ? "lead" : "trail");
+      if (s.logo) { const im = new Image(); im.alt = ""; im.onerror = () => im.remove(); im.src = s.logo; row.appendChild(im); }
+      row.appendChild(el("span", "ab", s.ab));
+      if (g.state !== "in" && s.rec) row.appendChild(el("span", "rec", s.rec));
+      if (g.state === "in") row.appendChild(el("span", "pts", s.score != null ? s.score : ""));
+      teams.appendChild(row);
     });
+    box.appendChild(teams);
+    const foot = el("div", "gb-foot");
+    if (g.state === "in") {
+      foot.appendChild(el("span", "clock-txt", g.detail));
+    } else {
+      const when = new Date(g.when);
+      const today = new Date().toDateString() === when.toDateString();
+      foot.appendChild(el("span", "clock-txt",
+        (today ? "Tonight " : when.toLocaleDateString(undefined, { weekday: "short" }) + " ") +
+        when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) + " · " + countdown(g.when)));
+    }
+    foot.appendChild(el("span", "", g.network || ""));
+    box.appendChild(foot);
   }
 
   // ---------- apps ----------
@@ -436,6 +561,10 @@
       }
       if (N) { if (!N.launch(pkg)) hint("Couldn't open that app"); }
       else hint("Preview: would open " + (appByPkg(pkg) || {}).label);
+    } else if (a === "video") {
+      playVideo(el.dataset.vid);
+    } else if (a === "game") {
+      if (currentGame) openApp(appsFor(currentGame));
     } else if (a === "input") {
       if (N) { if (!N.openInput(el.dataset.input)) hint("This TV didn't accept that input"); }
       else hint("Preview: would switch to " + el.textContent);
@@ -552,7 +681,8 @@
   window.onNativeResume = () => {
     tickClock();
     if (Date.now() - lastWeather > 15 * 60000) loadWeather();
-    if (Date.now() - lastScores > 2 * 60000) loadScores();
+    if (Date.now() - lastGame > 60000) loadGame();
+    if (Date.now() - lastYT > 20 * 60000) loadYouTube();
     renderDock();
   };
 
@@ -563,7 +693,10 @@
   renderDock();
   loadWeather();
   setInterval(loadWeather, 15 * 60000);
-  loadScores();
+  loadGame();
+  loadYouTube();
+  setInterval(loadYouTube, 30 * 60000);
+  setInterval(() => { if (currentGame && currentGame.state !== "in") renderGame(currentGame); }, 60000); // tick countdown
   focusFirst();
   if (N && N.takeLaunchMode && N.takeLaunchMode() === "pick") showPicker();
   if (!N && /[?&]pick\b/.test(location.search)) showPicker(); // browser preview: ?pick
