@@ -10,6 +10,7 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.media.tv.TvContract;
@@ -203,21 +204,27 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static String drawableToDataUrl(Drawable d, int maxW) {
+    /** Renders a drawable to a PNG data URL. If h > 0, renders at exactly w x h; else scales to max width w. */
+    private static String drawableToDataUrl(Drawable d, int w, int h) {
         Bitmap bmp;
-        if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
-            bmp = ((BitmapDrawable) d).getBitmap();
-        } else {
-            int w = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : 192;
-            int h = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 192;
+        if (h > 0) {
             bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(bmp);
             d.setBounds(0, 0, w, h);
             d.draw(c);
+        } else if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
+            bmp = ((BitmapDrawable) d).getBitmap();
+        } else {
+            int iw = d.getIntrinsicWidth() > 0 ? d.getIntrinsicWidth() : 320;
+            int ih = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 180;
+            bmp = Bitmap.createBitmap(iw, ih, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bmp);
+            d.setBounds(0, 0, iw, ih);
+            d.draw(c);
         }
-        if (bmp.getWidth() > maxW) {
-            int h = Math.round(bmp.getHeight() * (maxW / (float) bmp.getWidth()));
-            bmp = Bitmap.createScaledBitmap(bmp, maxW, Math.max(1, h), true);
+        if (h <= 0 && bmp.getWidth() > w) {
+            int nh = Math.round(bmp.getHeight() * (w / (float) bmp.getWidth()));
+            bmp = Bitmap.createScaledBitmap(bmp, w, Math.max(1, nh), true);
         }
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
@@ -253,6 +260,11 @@ public class MainActivity extends Activity {
             return arr.toString();
         }
 
+        /**
+         * Returns the app's own artwork: its icon, plus (for adaptive icons) the
+         * foreground symbol and background layer separately, and its TV banner.
+         * The UI shows the symbol big on a tile tinted from the background.
+         */
         @JavascriptInterface
         public String getIcon(String pkg) {
             synchronized (iconCache) {
@@ -261,19 +273,29 @@ public class MainActivity extends Activity {
             PackageManager pm = getPackageManager();
             JSONObject o = new JSONObject();
             try {
-                Drawable banner = null;
                 Intent tv = pm.getLeanbackLaunchIntentForPackage(pkg);
+                Intent phone = pm.getLaunchIntentForPackage(pkg);
+                Drawable icon = null;
+                try {
+                    if (tv != null) icon = pm.getActivityIcon(tv);
+                    else if (phone != null) icon = pm.getActivityIcon(phone);
+                } catch (Exception ignored) { }
+                if (icon == null) icon = pm.getApplicationIcon(pkg);
+
+                o.put("type", "icon");
+                o.put("src", drawableToDataUrl(icon, 256, 256));
+                if (Build.VERSION.SDK_INT >= 26 && icon instanceof AdaptiveIconDrawable) {
+                    AdaptiveIconDrawable a = (AdaptiveIconDrawable) icon;
+                    if (a.getForeground() != null) o.put("fg", drawableToDataUrl(a.getForeground(), 324, 324));
+                    if (a.getBackground() != null) o.put("bg", drawableToDataUrl(a.getBackground(), 48, 48));
+                }
+
+                Drawable banner = null;
                 if (tv != null) {
                     try { banner = pm.getActivityBanner(tv); } catch (Exception ignored) { }
                 }
                 if (banner == null) banner = pm.getApplicationBanner(pkg);
-                if (banner != null) {
-                    o.put("type", "banner");
-                    o.put("src", drawableToDataUrl(banner, 400));
-                } else {
-                    o.put("type", "icon");
-                    o.put("src", drawableToDataUrl(pm.getApplicationIcon(pkg), 192));
-                }
+                if (banner != null) o.put("banner", drawableToDataUrl(banner, 400, 0));
             } catch (Exception e) {
                 return "{}";
             }

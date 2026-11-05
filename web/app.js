@@ -232,7 +232,7 @@
   }
 
   // Average color of an icon -> a deep tint behind it, so every tile reads as one big logo.
-  function tintFrom(src, cb) {
+  function tintFrom(src, cb, k) {
     const img = new Image();
     img.onload = () => {
       try {
@@ -244,12 +244,12 @@
         let r = 0, g = 0, b = 0, n = 0;
         for (let i = 0; i < d.length; i += 4) {
           const a = d[i + 3], mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
-          if (a < 128 || (mx > 235 && mn > 235) || mx < 20) continue; // skip transparent, white, black
+          if (a < 128 || (k < 0.5 && ((mx > 235 && mn > 235) || mx < 20))) continue; // skip transparent (and white/black for full icons)
           const w = 1 + (mx - mn) / 64; // favor saturated pixels
           r += d[i] * w; g += d[i + 1] * w; b += d[i + 2] * w; n += w;
         }
         if (!n) return cb(null);
-        const k = 0.42; // darken for a premium, low-glare tile
+        k = k || 0.42; // darken for a premium, low-glare tile
         cb("rgb(" + Math.round(r / n * k) + "," + Math.round(g / n * k) + "," + Math.round(b / n * k) + ")");
       } catch (e) { cb(null); }
     };
@@ -257,30 +257,30 @@
     img.src = src;
   }
 
+  // Each tile = the app's own logo, about the size the name text was, on a tile
+  // tinted from the app's brand color. Logos come from the installed apps.
   function paintTile(t, app) {
     const clip = t.querySelector(".clip");
     const draw = (data) => {
-      if (data && data.type === "banner") {
-        const img = document.createElement("img");
-        img.className = "banner";
-        img.src = data.src;
-        clip.insertBefore(img, clip.firstChild);
-        return;
-      }
       const logo = document.createElement("div");
       logo.className = "logo";
-      if (data && data.src) {
+      if (data && (data.fg || data.src)) {
         const img = document.createElement("img");
-        img.src = data.src;
+        if (data.fg) {
+          img.src = data.fg;          // adaptive icon symbol, transparent background
+          img.className = "fg";
+          tintFrom(data.bg || data.src, (c) => { if (c) clip.style.setProperty("--tint", c); }, 0.55);
+        } else {
+          img.src = data.src;         // legacy icon (has its own background)
+          img.className = "full";
+          tintFrom(data.src, (c) => { if (c) clip.style.setProperty("--tint", c); }, 0.42);
+        }
+        img.onerror = () => { logo.innerHTML = ""; logo.appendChild(wordmark(app)); };
         logo.appendChild(img);
-        tintFrom(data.src, (c) => { if (c) clip.style.setProperty("--tint", c); });
       } else {
-        const word = document.createElement("div");
-        word.className = "word";
-        word.textContent = app.label;
-        logo.appendChild(word);
+        logo.appendChild(wordmark(app));
+        if (app.color) clip.style.setProperty("--tint", app.color);
       }
-      if (app.color) clip.style.setProperty("--tint", app.color);
       clip.insertBefore(logo, clip.firstChild);
     };
     if (!N) return draw(null);
@@ -292,6 +292,12 @@
       iconData[app.pkg] = data;
       draw(data);
     }, 0);
+  }
+  function wordmark(app) {
+    const w = document.createElement("div");
+    w.className = "word";
+    w.textContent = app.label;
+    return w;
   }
 
   // ---------- dock: inputs + settings + edit ----------

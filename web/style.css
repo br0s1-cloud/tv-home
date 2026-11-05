@@ -45,7 +45,7 @@ body > * { position: relative; z-index: 1; }
 .top {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   padding: 3.6vw var(--pad) 0;
 }
 
@@ -68,21 +68,24 @@ body > * { position: relative; z-index: 1; }
   opacity: 0;
   transition: opacity 400ms;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1.2vw;
-  text-align: right;
-  padding-bottom: 0.4vw;
+  text-align: center;
+  /* Offsets the date line so the block centers on the clock digits */
+  margin-bottom: 2.3vw;
 }
 
 .temp {
-  font-size: 3.6vw;
+  font-size: 5.6vw;
   font-weight: 200;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
 }
 
-.wmeta { display: flex; flex-direction: column; gap: 0.25vw; }
-.cond  { font-size: 1.25vw; font-weight: 500; }
-.range { font-size: 1.05vw; color: var(--muted); }
+.wmeta { display: flex; flex-direction: column; align-items: center; gap: 0.25vw; margin-top: 0.6vw; }
+.cond  { font-size: 1.3vw; font-weight: 500; }
+.range { font-size: 1.1vw; color: var(--muted); }
 
 /* ---------- Scores ---------- */
 .scores {
@@ -200,7 +203,11 @@ main {
   align-items: center;
   justify-content: center;
 }
-.tile .logo img { width: 42%; height: 62%; object-fit: contain; filter: drop-shadow(0 0.3vw 0.8vw rgba(0,0,0,0.35)); }
+.tile .logo img { object-fit: contain; filter: drop-shadow(0 0.3vw 0.8vw rgba(0,0,0,0.3)); }
+/* Adaptive-icon symbol: the canvas has built-in padding, so render larger. */
+.tile .logo img.fg   { width: 6.6vw; height: 6.6vw; }
+/* Legacy full icon: show as a crisp rounded badge. */
+.tile .logo img.full { width: 3.8vw; height: 3.8vw; border-radius: 0.8vw; }
 .tile .logo .word {
   font-size: 2.1vw;
   font-weight: 700;
