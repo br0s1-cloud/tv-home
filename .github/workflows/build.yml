@@ -52,10 +52,21 @@ jobs:
           mkdir -p app/src/main/assets && cp -r web/. app/src/main/assets/
           sed -i "s/__V__/${GITHUB_SHA::8}/g" app/src/main/assets/index.html
 
+      - name: Load signing key from secret
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          if [ -z "$SIGNING_KEY" ]; then echo "::error::SIGNING_KEY secret is missing"; exit 1; fi
+          echo "::add-mask::${SIGNING_KEY%%:*}"
+          printf '%s' "${SIGNING_KEY#*:}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASS=${SIGNING_KEY%%:*}" >> "$GITHUB_ENV"
+
       - name: Build APK
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           gradle --no-daemon :app:assembleRelease -PuiUrl="https://${OWNER}.github.io/${{ github.event.repository.name }}/"
+          test -f app/build/outputs/apk/release/app-release.apk || { echo "::error::APK was not signed"; exit 1; }
           cp app/build/outputs/apk/release/app-release.apk brosi-home.apk
 
       - uses: actions/upload-artifact@v4

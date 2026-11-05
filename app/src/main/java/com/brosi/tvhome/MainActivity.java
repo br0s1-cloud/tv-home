@@ -57,6 +57,11 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
 
     private static final String ASSET_URL = "file:///android_asset/index.html";
+    /** The only sites the home screen may fetch data from. Changing this needs a reinstall. */
+    private static final java.util.Set<String> ALLOWED_HOSTS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "api.open-meteo.com", "site.api.espn.com", "www.youtube.com", "news.google.com",
+            "feeds.bbci.co.uk", "feeds.content.dowjones.io",
+            "query1.finance.yahoo.com", "query2.finance.yahoo.com"));
     static final String EXTRA_PICK = "pick";
     private static final String STOCK_HOME = "com.google.android.apps.tv.launcherx";
 
@@ -414,7 +419,9 @@ public class MainActivity extends Activity {
                 String err = "";
                 String body = "";
                 try {
-                    if (!url.startsWith("https://")) throw new IllegalArgumentException("https only");
+                    Uri u = Uri.parse(url);
+                    if (!"https".equals(u.getScheme()) || u.getHost() == null || !ALLOWED_HOSTS.contains(u.getHost().toLowerCase()))
+                        throw new IllegalArgumentException("blocked host");
                     HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                     c.setConnectTimeout(8000);
                     c.setReadTimeout(10000);

@@ -4,3 +4,6 @@ app/build/
 app/src/main/assets/
 local.properties
 .DS_Store
+*.keystore
+*.jks
+BROSI_SIGNING_KEY*
