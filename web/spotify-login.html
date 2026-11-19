@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Connect Spotify to Brosi Home</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #000; color: #f5f5f7; font: 16px/1.55 -apple-system, "Inter", system-ui, sans-serif; display: flex; justify-content: center; }
+    main { max-width: 680px; padding: 56px 24px; }
+    h1 { font-weight: 300; font-size: 34px; letter-spacing: -0.02em; margin: 0 0 6px; }
+    p { color: #a1a1a6; }
+    .step { margin-top: 28px; padding: 20px 22px; border-radius: 16px; background: #141416; border: 1px solid #222; }
+    .step b { color: #f5f5f7; }
+    button { font: inherit; font-weight: 600; border: 0; border-radius: 999px; padding: 12px 22px; background: #1ed760; color: #000; cursor: pointer; }
+    button.secondary { background: #2c2c2e; color: #f5f5f7; }
+    pre { white-space: pre-wrap; word-break: break-all; background: #0a0a0b; border: 1px solid #222; border-radius: 10px; padding: 14px; font-size: 12.5px; color: #d1d1d6; max-height: 220px; overflow: auto; }
+    .err { color: #ff6b6b; }
+    .ok { color: #30d158; }
+    small { color: #6e6e73; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Connect Spotify</h1>
+  <p>Links your Spotify to Brosi Home so the TV can show your playlists and albums from your top artists, and start them playing. Your Mac must be on the TV's Wi-Fi for step 2.</p>
+
+  <div class="step" id="step1">
+    <b>Step 1.</b> Sign in to Spotify and click <b>Agree</b>.
+    <p><button id="go">Connect Spotify</button></p>
+    <small>Brosi Home can read your playlists and top artists, and control playback. It can't change your library, playlists or account.</small>
+  </div>
+
+  <div class="step" id="step2" hidden>
+    <b>Step 2.</b> Copy this into Terminal and press Return. It finds your TV and hands it the sign-in.
+    <pre id="cmd"></pre>
+    <p><button id="copy">Copy</button> <span id="copied" class="ok"></span></p>
+    <small>Treat this like a password: don't share it. It stops working if you disconnect Brosi Home in your Spotify account settings, and Spotify asks you to sign in again about every 6 months.</small>
+  </div>
+
+  <p id="msg"></p>
+</main>
+
+<script src="config.js?v=__V__"></script>
+<script>
+(function () {
+  "use strict";
+  const CID = ((window.TV_CONFIG || {}).spotify || {}).clientId;
+  const REDIRECT = location.origin + location.pathname;
+  const SCOPES = "playlist-read-private playlist-read-collaborative user-top-read user-read-playback-state user-modify-playback-state";
+  const msg = (t, cls) => { const m = document.getElementById("msg"); m.textContent = t; m.className = cls || ""; };
+
+  const b64url = (buf) => btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  function randomString(n) {
+    const a = new Uint8Array(n); crypto.getRandomValues(a);
+    return Array.from(a, (x) => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"[x % 66]).join("");
+  }
+
+  if (!CID) { msg("Spotify isn't set up yet (no Client ID in config.js). Ask Claude to finish setup.", "err"); document.getElementById("go").disabled = true; }
+
+  document.getElementById("go").onclick = async () => {
+    const verifier = randomString(64);
+    const state = randomString(16);
+    sessionStorage.setItem("bh_pkce", JSON.stringify({ verifier, state }));
+    const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    const q = new URLSearchParams({ client_id: CID, response_type: "code", redirect_uri: REDIRECT, scope: SCOPES,
+      code_challenge_method: "S256", code_challenge: challenge, state, show_dialog: "true" });
+    location.assign("https://accounts.spotify.com/authorize?" + q.toString());
+  };
+
+  const params = new URLSearchParams(location.search);
+  if (params.get("error")) { msg("Spotify said: " + params.get("error") + ". Try again.", "err"); history.replaceState(null, "", REDIRECT); }
+  if (params.get("code")) {
+    const saved = JSON.parse(sessionStorage.getItem("bh_pkce") || "{}");
+    sessionStorage.removeItem("bh_pkce");
+    history.replaceState(null, "", REDIRECT); // keep the one-time code out of history
+    if (!saved.verifier || saved.state !== params.get("state")) { msg("That sign-in didn't match. Click Connect Spotify again.", "err"); return; }
+    msg("Finishing sign-in…");
+    fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", code: params.get("code"), redirect_uri: REDIRECT, client_id: CID, code_verifier: saved.verifier }),
+    }).then((r) => r.json()).then((t) => {
+      if (!t.refresh_token) throw new Error(t.error_description || t.error || "no token");
+      const cmd = 'export PATH="$HOME/Downloads/platform-tools:$PATH"; ' +
+        'IP=$(for i in $(seq 1 254); do (nc -z -G 1 10.0.0.$i 5555 2>/dev/null && echo 10.0.0.$i) & done; wait | head -1); ' +
+        '[ -z "$IP" ] && echo "TV not found: is the Mac on the TV\'s Wi-Fi?" || { adb connect $IP:5555 >/dev/null; sleep 2; ' +
+        'adb -s $IP:5555 shell am start -n com.brosi.tvhome/.MainActivity --es spotify_client ' + CID + ' --es spotify_refresh ' + t.refresh_token +
+        ' >/dev/null && echo "Spotify connected to the TV"; }';
+      document.getElementById("cmd").textContent = cmd;
+      document.getElementById("step1").hidden = true;
+      document.getElementById("step2").hidden = false;
+      msg("");
+      document.getElementById("copy").onclick = () => navigator.clipboard.writeText(cmd).then(() => { document.getElementById("copied").textContent = "Copied"; });
+    }).catch((e) => msg("Sign-in failed: " + e.message + ". Click Connect Spotify to try again.", "err"));
+  }
+})();
+</script>
+</body>
+</html>

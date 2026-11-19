@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Version asset URLs so the TV never mixes old and new files
-        run: sed -i "s/__V__/${GITHUB_SHA::8}/g" web/index.html
+        run: sed -i "s/__V__/${GITHUB_SHA::8}/g" web/index.html web/spotify-login.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

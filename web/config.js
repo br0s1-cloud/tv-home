@@ -5,6 +5,14 @@ window.TV_CONFIG = {
   // Set to true to bring the picker back. Google TV is always one press away (bottom bar).
   wakePicker: false,
 
+  // Top-middle box: "spotify" (your playlists + albums from your top artists) or "youtube".
+  topBox: "spotify",
+  spotify: {
+    clientId: "",          // from developer.spotify.com (public, not a secret)
+    app: "com.spotify.tv.android",
+    rotateSeconds: 20,     // flips between pages when you're not using the box
+  },
+
   weather: {
     city: "Washington, DC",
     lat: 38.8951,

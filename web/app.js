@@ -211,6 +211,172 @@
     if (!(N.openUrl && N.openUrl(url, "com.google.android.youtube.tv"))) hint("Couldn't open YouTube");
   }
 
+
+  // ---------- Spotify: your playlists + albums from your top artists ----------
+  const SPC = CFG.spotify || {};
+  let spPages = [], spPage = 0, spTimer = null, spBusy = false, lastSP = 0;
+  function spCall(method, path, body) {
+    return new Promise((resolve, reject) => {
+      const id = "sp" + (++cbSeq);
+      pending[id] = { resolve, reject };
+      N.spotify(method, path, body ? JSON.stringify(body) : "", id);
+      setTimeout(() => { if (pending[id]) { delete pending[id]; reject(new Error("timeout")); } }, 30000);
+    }).then((t) => (t ? JSON.parse(t) : {}));
+  }
+  function spImg(images) { return images && images.length ? (images[0].url || "") : ""; }
+  const SP_DEMO = [
+    { kind: "Playlist", title: "Gym rotation", sub: "Playlist · 48 songs", uri: "spotify:playlist:demo1", img: "https://i.scdn.co/image/demo1", color: "#5b2a86" },
+    { kind: "Playlist", title: "Late night drive", sub: "Playlist · 32 songs", uri: "spotify:playlist:demo2", img: "https://i.scdn.co/image/demo2", color: "#1f4e79" },
+    { kind: "Playlist", title: "Game day", sub: "Playlist · 60 songs", uri: "spotify:playlist:demo3", img: "https://i.scdn.co/image/demo3", color: "#7a2e1d" },
+    { kind: "Album", title: "Sample Album One", sub: "Top artist · 2026", uri: "spotify:album:demo4", img: "https://i.scdn.co/image/demo4", color: "#2e5d3a" },
+    { kind: "Album", title: "Sample Album Two", sub: "Top artist · 2025", uri: "spotify:album:demo5", img: "https://i.scdn.co/image/demo5", color: "#6b5b1d" },
+    { kind: "Album", title: "Sample Album Three", sub: "Top artist · 2024", uri: "spotify:album:demo6", img: "https://i.scdn.co/image/demo6", color: "#3a3a6b" },
+  ];
+  function buildPages(playlists, albums) {
+    const pages = [];
+    for (let i = 0; i < Math.min(playlists.length, 6); i += 3) pages.push({ label: "Your playlists", items: playlists.slice(i, i + 3) });
+    for (let i = 0; i < Math.min(albums.length, 6); i += 3) pages.push({ label: "From your top artists", items: albums.slice(i, i + 3) });
+    return pages;
+  }
+  function loadSpotify(force) {
+    if (spBusy) return;
+    const btn = $("sp-refresh");
+    if (!N) { spPages = buildPages(SP_DEMO.slice(0, 3), SP_DEMO.slice(3)); return renderSpotify(false); }
+    if (!N.spotifyLinked || !N.spotifyLinked()) return renderSpotifyConnect();
+    const cached = store.get("bh.c.sp", null);
+    if (!force && !lastSP && cached && cached.v && cached.v.length) { spPages = cached.v; renderSpotify(false); }
+    spBusy = true;
+    if (btn) btn.classList.add("spin");
+    const playlists = spCall("GET", "/v1/me/playlists?limit=12").then((d) => (d.items || []).filter(Boolean).map((p) => {
+      const count = (p.items && p.items.total) || (p.tracks && p.tracks.total);
+      return { kind: "Playlist", title: p.name || "Playlist", sub: "Playlist" + (count ? " · " + count + " songs" : ""), img: spImg(p.images), uri: p.uri };
+    })).catch(() => []);
+    const albums = spCall("GET", "/v1/me/top/artists?limit=6&time_range=short_term").then((d) => {
+      const artists = (d.items || []).slice(0, 6);
+      return Promise.all(artists.map((a) => spCall("GET", "/v1/artists/" + encodeURIComponent(a.id) + "/albums?include_groups=album&limit=5").then((r) => {
+        const al = (r.items || []).sort((x, y) => String(y.release_date || "").localeCompare(String(x.release_date || "")))[0];
+        return al ? { kind: "Album", title: al.name, sub: a.name + " · " + String(al.release_date || "").slice(0, 4), img: spImg(al.images), uri: al.uri } : null;
+      }).catch(() => null)));
+    }).then((l) => l.filter(Boolean)).catch(() => []);
+    Promise.all([playlists, albums]).then(([pl, al]) => {
+      lastSP = Date.now();
+      spBusy = false;
+      if (btn) btn.classList.remove("spin");
+      const pages = buildPages(pl, al);
+      if (pages.length) {
+        spPages = pages;
+        store.set("bh.c.sp", { t: Date.now(), v: pages });
+        if (spPage >= pages.length) spPage = 0;
+        renderSpotify(false);
+        if (force) hint("Spotify refreshed");
+      } else if (!N.spotifyLinked()) {
+        renderSpotifyConnect();
+      } else if (!spPages.length) {
+        renderSpotifyEmpty("Couldn't reach Spotify right now");
+      } else if (force) hint("Couldn't reach Spotify right now");
+    });
+    clearTimeout(loadSpotify._t);
+    loadSpotify._t = setTimeout(() => loadSpotify(), 30 * 60000);
+  }
+  function renderSpotifyEmpty(msg) {
+    const row = $("sp-row");
+    row.innerHTML = "";
+    row.appendChild(el("div", "yt-empty", msg));
+  }
+  function renderSpotifyConnect() {
+    $("sp-sub").textContent = "Not connected";
+    $("sp-dots").innerHTML = "";
+    const row = $("sp-row");
+    row.innerHTML = "";
+    const m = el("div", "sp-connect");
+    m.innerHTML = "<b>Connect your Spotify</b><br>On your Mac, open <b>br0s1-cloud.github.io/tv-home/spotify-login.html</b> and follow the two steps.";
+    row.appendChild(m);
+  }
+  function spTile(it) {
+    const t = el("div", "vid");
+    t.tabIndex = 0;
+    t.dataset.nav = "1";
+    t.dataset.action = "spitem";
+    t.dataset.uri = it.uri;
+    const th = el("div", "thumb");
+    if (it.img) {
+      const bg = new Image(); bg.className = "bg"; bg.src = it.img; th.appendChild(bg);
+      const cv = new Image(); cv.className = "cover"; cv.src = it.img; th.appendChild(cv);
+    } else {
+      th.style.background = it.color || "#1c1c1f";
+      th.appendChild(el("div", "note", "♪"));
+    }
+    th.appendChild(el("div", "kind", it.kind));
+    t.appendChild(th);
+    t.appendChild(el("div", "vt", it.title));
+    t.appendChild(el("div", "vm", it.sub));
+    return t;
+  }
+  function renderSpotify(animate, focusIndex) {
+    if (!spPages.length) return;
+    spPage = ((spPage % spPages.length) + spPages.length) % spPages.length;
+    const pg = spPages[spPage];
+    $("sp-sub").textContent = pg.label;
+    const dots = $("sp-dots");
+    dots.innerHTML = "";
+    if (spPages.length > 1) spPages.forEach((_, i) => dots.appendChild(el("i", i === spPage ? "on" : "")));
+    const row = $("sp-row");
+    row.classList.add("sp-row-swap");
+    const draw = () => {
+      row.innerHTML = "";
+      pg.items.forEach((it) => row.appendChild(spTile(it)));
+      if (focusIndex != null) {
+        const tiles = row.querySelectorAll(".vid");
+        const f = tiles[Math.max(0, Math.min(tiles.length - 1, focusIndex))];
+        if (f) f.focus({ preventScroll: true });
+      }
+    };
+    if (animate) { row.classList.add("out"); setTimeout(() => { draw(); row.classList.remove("out"); }, 240); } else draw();
+    clearInterval(spTimer);
+    spTimer = setInterval(() => {
+      if ($("sp").contains(document.activeElement)) return; // don't flip while you're browsing it
+      spPage = (spPage + 1) % Math.max(1, spPages.length);
+      renderSpotify(true);
+    }, (SPC.rotateSeconds || 20) * 1000);
+  }
+  // Right on the last tile / Left on the first tile flips the page.
+  function spotifyPageKey(ae, dir) {
+    if (!ae || ae.dataset.action !== "spitem" || spPages.length < 2) return false;
+    const tiles = Array.from($("sp-row").querySelectorAll(".vid"));
+    const i = tiles.indexOf(ae);
+    if (dir === "right" && i === tiles.length - 1) { spPage++; renderSpotify(true, 0); return true; }
+    if (dir === "left" && i === 0) { spPage--; renderSpotify(true, 2); return true; }
+    return false;
+  }
+  function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  function findTV(devs) {
+    const list = (devs && devs.devices) || [];
+    return list.find((d) => d.type === "TV" && d.is_active) || list.find((d) => d.type === "TV") ||
+      list.find((d) => /tv|tcl|android/i.test(d.name || "")) || null;
+  }
+  async function playSpotify(uri) {
+    if (!N) return hint("Preview: would play " + uri + " on the TV");
+    const app = SPC.app || "com.spotify.tv.android";
+    hint("Starting on Spotify…");
+    try {
+      let tv = findTV(await spCall("GET", "/v1/me/player/devices"));
+      if (!tv) {
+        // Spotify's TV app only shows up as a speaker once it's open.
+        N.launch(app);
+        for (let k = 0; k < 8 && !tv; k++) { await wait(1500); tv = findTV(await spCall("GET", "/v1/me/player/devices").catch(() => null)); }
+      }
+      if (!tv) throw new Error("no tv device");
+      await spCall("PUT", "/v1/me/player/play?device_id=" + encodeURIComponent(tv.id), { context_uri: uri });
+      N.launch(app);
+    } catch (e) {
+      // Fallback: just open it in the Spotify app.
+      const parts = String(uri).split(":");
+      const ok = N.openUrl && N.openUrl("https://open.spotify.com/" + parts[1] + "/" + parts[2], app);
+      hint(ok ? "Opened in Spotify. Press play" : "Couldn't start Spotify");
+    }
+  }
+  window.onSpotifyLinked = () => { lastSP = 0; store.set("bh.c.sp", null); spPages = []; applyTopBox(); hint("Spotify connected"); };
+
   // ---------- Live games on your services (rotating), else the next one ----------
   let gameTimer, rotTimer, lastGame = 0, currentGame = null, gameList = [], gameIdx = 0, gameMode = "live";
   function ymd(d) { return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0"); }
@@ -949,6 +1115,10 @@
       playVideo(el.dataset.vid);
     } else if (a === "ytrefresh") {
       loadYouTube(true);
+    } else if (a === "sprefresh") {
+      loadSpotify(true);
+    } else if (a === "spitem") {
+      playSpotify(el.dataset.uri);
     } else if (a === "newsrefresh") {
       loadNews(true);
     } else if (a === "game") {
@@ -995,6 +1165,7 @@
         }
       }
       const ae = document.activeElement;
+      if (ae && ae.dataset && (dir === "left" || dir === "right") && spotifyPageKey(ae, dir)) return;
       if (ae && ae.dataset && ae.dataset.action === "stack" && (dir === "down" || dir === "up")) {
         if (flipStack(ae, dir === "down" ? 1 : -1)) return;
       }
@@ -1094,7 +1265,8 @@
     tickClock();
     if (Date.now() - lastWeather > 15 * 60000) loadWeather();
     if (Date.now() - lastGame > 60000) loadGame();
-    if (Date.now() - lastYT > 20 * 60000) loadYouTube();
+    if (spotifyActive()) { if ($("sp").hidden) applyTopBox(); else if (Date.now() - lastSP > 20 * 60000) loadSpotify(); }
+    else { if (!$("sp").hidden) applyTopBox(); else if (Date.now() - lastYT > 20 * 60000) loadYouTube(); }
     renderDock();
   };
 
@@ -1113,7 +1285,14 @@
   loadWeather();
   setInterval(loadWeather, 15 * 60000);
   loadGame();
-  loadYouTube();
+  // Spotify replaces the YouTube box only once it's connected, so the box is never empty.
+  function spotifyActive() { return CFG.topBox === "spotify" && (!N || (N.spotifyLinked && N.spotifyLinked())); }
+  function applyTopBox() {
+    const sp = spotifyActive();
+    $("yt").hidden = sp; $("sp").hidden = !sp;
+    if (sp) loadSpotify(); else if (!lastYT) loadYouTube();
+  }
+  applyTopBox();
   setInterval(loadYouTube, 30 * 60000);
   setInterval(() => { if (currentGame && currentGame.state !== "in") renderGame(currentGame); }, 60000); // tick countdown
   focusFirst();

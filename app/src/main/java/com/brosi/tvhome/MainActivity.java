@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getIntent() != null && getIntent().getBooleanExtra(EXTRA_PICK, false)) launchMode = "pick";
+        handleSpotifyExtras(getIntent());
         BrosiService.start(this, false);
 
         web = new WebView(this);
@@ -203,6 +204,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (handleSpotifyExtras(intent)) return;
         if (intent != null && intent.getBooleanExtra(EXTRA_PICK, false)) {
             js("window.onNativePick && window.onNativePick()");
         } else {
@@ -273,6 +275,90 @@ public class MainActivity extends Activity {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
         return "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+    }
+
+    // ---------- Spotify (tokens stay native; the web page only gets data back) ----------
+    private static final String SP_PREFS = "spotify";
+
+    /** Sign-in from the Mac: adb shell am start ... --es spotify_client ID --es spotify_refresh TOKEN */
+    private boolean handleSpotifyExtras(Intent intent) {
+        if (intent == null) return false;
+        String refresh = intent.getStringExtra("spotify_refresh");
+        boolean logout = intent.getBooleanExtra("spotify_logout", false);
+        if (refresh == null && !logout) return false;
+        android.content.SharedPreferences.Editor e = getSharedPreferences(SP_PREFS, MODE_PRIVATE).edit();
+        if (logout) {
+            e.clear();
+        } else {
+            String client = intent.getStringExtra("spotify_client");
+            e.putString("refresh", refresh.trim()).remove("access").putLong("exp", 0);
+            if (client != null) e.putString("client", client.trim());
+        }
+        e.apply();
+        intent.removeExtra("spotify_refresh");
+        js("window.onSpotifyLinked && window.onSpotifyLinked()");
+        return true;
+    }
+
+    private synchronized String spotifyToken(boolean forceRefresh) throws Exception {
+        android.content.SharedPreferences p = getSharedPreferences(SP_PREFS, MODE_PRIVATE);
+        String access = p.getString("access", null);
+        if (!forceRefresh && access != null && System.currentTimeMillis() < p.getLong("exp", 0)) return access;
+        String refresh = p.getString("refresh", null), client = p.getString("client", null);
+        if (refresh == null || client == null) throw new IllegalStateException("not linked");
+        HttpURLConnection c = (HttpURLConnection) new URL("https://accounts.spotify.com/api/token").openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(10000);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        String form = "grant_type=refresh_token&refresh_token=" + java.net.URLEncoder.encode(refresh, "UTF-8")
+                + "&client_id=" + java.net.URLEncoder.encode(client, "UTF-8");
+        c.getOutputStream().write(form.getBytes(StandardCharsets.UTF_8));
+        int code = c.getResponseCode();
+        String body = readAll(code < 400 ? c.getInputStream() : c.getErrorStream());
+        c.disconnect();
+        if (code >= 400) {
+            if (body.contains("invalid_grant")) p.edit().remove("refresh").apply(); // expired: sign in again
+            throw new IllegalStateException("token " + code);
+        }
+        JSONObject o = new JSONObject(body);
+        access = o.getString("access_token");
+        android.content.SharedPreferences.Editor e = p.edit()
+                .putString("access", access)
+                .putLong("exp", System.currentTimeMillis() + (o.optLong("expires_in", 3600) - 120) * 1000L);
+        if (o.has("refresh_token")) e.putString("refresh", o.getString("refresh_token")); // Spotify may rotate it
+        e.apply();
+        return access;
+    }
+
+    private static String readAll(InputStream in) throws Exception {
+        if (in == null) return "";
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        return out.toString(StandardCharsets.UTF_8.name());
+    }
+
+    private String[] spotifyRequest(String method, String path, String body, boolean retried) throws Exception {
+        String token = spotifyToken(false);
+        HttpURLConnection c = (HttpURLConnection) new URL("https://api.spotify.com" + path).openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(12000);
+        c.setRequestMethod(method);
+        c.setRequestProperty("Authorization", "Bearer " + token);
+        c.setRequestProperty("Accept", "application/json");
+        if ("PUT".equals(method)) {
+            c.setDoOutput(true);
+            c.setRequestProperty("Content-Type", "application/json");
+            c.getOutputStream().write((body == null ? "" : body).getBytes(StandardCharsets.UTF_8));
+        }
+        int code = c.getResponseCode();
+        String resp = readAll(code < 400 ? c.getInputStream() : c.getErrorStream());
+        c.disconnect();
+        if (code == 401 && !retried) { spotifyToken(true); return spotifyRequest(method, path, body, true); }
+        return new String[]{String.valueOf(code), resp};
     }
 
     /** Methods callable from JavaScript as window.Android.* */
@@ -500,6 +586,32 @@ public class MainActivity extends Activity {
                 try { startActivity(go); } catch (Exception ignored) { }
             });
             return true;
+        }
+
+        @JavascriptInterface
+        public boolean spotifyLinked() {
+            android.content.SharedPreferences p = getSharedPreferences(SP_PREFS, MODE_PRIVATE);
+            return p.getString("refresh", null) != null && p.getString("client", null) != null;
+        }
+
+        /** Spotify Web API call (GET/PUT only, api.spotify.com/v1 only). Calls back with (err, body). */
+        @JavascriptInterface
+        public void spotify(String method, String path, String body, String cbId) {
+            pool.submit(() -> {
+                String err = "", resp = "";
+                try {
+                    if (!("GET".equals(method) || "PUT".equals(method))) throw new IllegalArgumentException("method");
+                    if (path == null || !path.startsWith("/v1/") || path.contains("..")) throw new IllegalArgumentException("path");
+                    String[] r = spotifyRequest(method, path, body, false);
+                    int code = Integer.parseInt(r[0]);
+                    resp = r[1];
+                    if (code >= 400) err = "HTTP " + code;
+                } catch (Exception e) {
+                    err = String.valueOf(e.getMessage());
+                }
+                js("window.__nativeCb && window.__nativeCb(" + JSONObject.quote(cbId) + ","
+                        + JSONObject.quote(err) + "," + JSONObject.quote(resp) + ")");
+            });
         }
 
         @JavascriptInterface
